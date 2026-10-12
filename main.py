@@ -15,7 +15,7 @@ from typing import Any
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent
-from astrbot.api.event.filter import command_group, llm_tool
+from astrbot.api.event.filter import command_group, custom_filter, llm_tool
 from astrbot.api.star import Context, Star
 from astrbot.core.platform.astr_message_event import MessageEventResult
 from astrbot.core.star.filter.command import GreedyStr
@@ -94,10 +94,8 @@ class _落空兜底(CustomFilter):
     「打不开Steam，你发链接干嘛，考验我视力？」还自称「我又没权限爬Steam」，
     它并不在查 Steam，它在编。
 
-    `CommandGroupFilter.filter` 会先跑 `custom_filter_ok`，任一过滤器返回 False
-    就跳过整个指令组。所以这里只在**真的落空**时返回 True，同时
-    `set_result` + `stop_event`：前者把提示词放进结果链让适配器发出去，后者
-    终止事件传播，免得消息继续走到模型。
+    只在真落空时 `set_result` + `stop_event`：前者把提示词放进结果链让适配器
+    发出去，后者终止事件传播，免得消息继续走到模型。
     """
 
     def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
@@ -111,6 +109,11 @@ class _落空兜底(CustomFilter):
 
 
 class Main(Star):
+    # `custom_filter_ok` 每次判断时都会问一遍。
+    #
+    # 别写成 `self.爱完美.add_custom_filter(...)`——`self.爱完美` 是
+    # `RegisteringCommandable`，它没有那个方法，会在加载时报 AttributeError。
+    @custom_filter(_落空兜底)
     @command_group(_组名)
     def 爱完美(self):
         """CS2 战绩查询。指令都在这个组下，不占用通用名字。"""
@@ -126,8 +129,6 @@ class Main(Star):
         super().__init__(context)
         self.config = config
         self._凭据 = 凭据仓库(self._数据目录())
-        # 指令落空时自己接住，别让消息落到模型手上——见 `_落空兜底` 的类。
-        self.爱完美.add_custom_filter(_落空兜底(self))
 
     def _数据目录(self) -> Path:
         from astrbot.core.utils.astrbot_path import get_astrbot_data_path
