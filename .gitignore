@@ -5,6 +5,9 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# 临时预览（生成图标的中间产物）
+.workbuddy/
+
 # 编辑器
 .vscode/
 .idea/
