@@ -1,7 +1,10 @@
-"""爱完美：完美世界竞技平台 CS2 战绩查询。
+"""爱完美：CS2 战绩查询。
 
 用户绑定自己的 steamid64 后，指令与模型都能读到他自己的战绩数据。
-完美接口查战绩不需要登录态，所以绑定只是记一个 id，没有扫码登录。
+
+数据来自 `api.wmpvp.com`——域名是完美竞技平台的，但**返回的是 CS2 官方匹配
+（官匹）的数据**，不是完美平台的对局记录。三条实测证据见 `aiwm/来源.py`。
+所以输出里不能说「完美平台战绩」。
 """
 
 from __future__ import annotations
@@ -14,22 +17,31 @@ from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.event.filter import command_group, llm_tool
 from astrbot.api.star import Context, Star
+from astrbot.core.platform.astr_message_event import MessageEventResult
 from astrbot.core.star.filter.command import GreedyStr
+from astrbot.core.star.filter.custom_filter import CustomFilter
 
 # 全部在模块顶层导入。插件加载时就把整个包摸清：少文件、依赖缺失都在启动
 # 阶段报错，而不是等用户发了指令才在懒加载里抛模块不存在。
 from .aiwm.battles import 读战绩数据
 from .aiwm.match import 开局设定, 设定文本
 from .aiwm.pk import 找对手
+from .aiwm.pk_target import 取对手标识, 对手来源
 from .aiwm.prompts import PK提示, 开局提示, 锐评提示
 from .aiwm.stats import 占优项数, 对比文本, 对比要点
 from .aiwm.storage import 凭据仓库, 取有效steamid
 from .aiwm.transport import 业务错误, 完美传输
+from .aiwm.兜底 import 取落空参数, 是否落空, 落空提示
+
+# 指令组名。改这里要同时改 `_帮助文本` 的开头与 `aiwm/兜底.py` 的取参函数。
+_组名 = "爱完美"
 
 # PK 名字要念在提示里，太长挤版面。
 _昵称上限 = 16
 
-_帮助文本 = """爱完美 · 完美竞技平台 CS2 战绩
+_帮助文本 = """爱完美 · CS2 战绩查询
+
+数据来自 CS2 官方匹配（官匹），不是完美竞技平台的对局记录。
 
 /爱完美 绑定 <steamid64>
   记下你的 SteamID64，之后的查询都看它。
@@ -41,7 +53,7 @@ _帮助文本 = """爱完美 · 完美竞技平台 CS2 战绩
   查战绩不需要登录平台，不用扫码。
 
 /爱完美 战绩
-  近期战绩：段位与综合分、胜率、KD、Rating、ADR、KAST、RWS、
+  近期战绩：分数段与综合分、胜率、KD、Rating、ADR、KAST、RWS、
   爆头率与首杀率、常用地图、常用武器与击杀分布、多杀次数、最近十场评分。
 
 /爱完美 开一局
@@ -52,12 +64,15 @@ _帮助文本 = """爱完美 · 完美竞技平台 CS2 战绩
   让模型基于上面的数据写一段锐评。会先给一句称号，再分别说打得好、
   问题和一条具体建议。
 
-/爱完美 PK <名字>
-  和另一个人比近期战绩。名字是绑定时记下的平台显示名，可以用 /爱完美 昵称 改。
-  双方都得先绑定。模型会给两人各打一个趣味分并点评胜负手。
+/爱完美 PK <steamid64 或名字>
+  和另一个人比近期战绩。对方不用绑定：
+  · 直接发他的 steamid64 或含它的网址，我从里面取
+  · 发他在本机记下的 PK 名字（用 /爱完美 昵称 设的）
+
+  模型会给两人各打一个趣味分并点评胜负手。
 
 /爱完美 昵称 <名字>
-  改你在 PK 时被叫的名字。不设的话取绑定时的平台显示名。
+  改你在 PK 时被叫的名字。不设的话取绑定时的显示名。
 
 /爱完美 解绑
   解除绑定并立即删除本地记录。
@@ -71,10 +86,34 @@ _帮助文本 = """爱完美 · 完美竞技平台 CS2 战绩
 直接问模型「我的 CS2 战绩怎么样」也会走同一套数据。"""
 
 
+class _落空兜底(CustomFilter):
+    """`/爱完美 <没匹配上子命令的内容>` 时自己回一句。
+
+    没有它的话这条消息会被 AstrBot 跳过指令、**原样进模型**——模型收到的是
+    一句普通提问，于是自己编。实测用户发 `/爱完美 <Steam 主页链接>`，模型回
+    「打不开Steam，你发链接干嘛，考验我视力？」还自称「我又没权限爬Steam」，
+    它并不在查 Steam，它在编。
+
+    `CommandGroupFilter.filter` 会先跑 `custom_filter_ok`，任一过滤器返回 False
+    就跳过整个指令组。所以这里只在**真的落空**时返回 True，同时
+    `set_result` + `stop_event`：前者把提示词放进结果链让适配器发出去，后者
+    终止事件传播，免得消息继续走到模型。
+    """
+
+    def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
+        文本 = getattr(event, "message_str", "") or ""
+        if not 是否落空(文本, _组名):
+            return False
+
+        event.set_result(MessageEventResult().message(落空提示(取落空参数(文本, _组名))))
+        event.stop_event()
+        return True
+
+
 class Main(Star):
-    @command_group("爱完美")
+    @command_group(_组名)
     def 爱完美(self):
-        """完美竞技平台 CS2 战绩查询。指令都在这个组下，不占用通用名字。"""
+        """CS2 战绩查询。指令都在这个组下，不占用通用名字。"""
 
     def __init__(self, context: Context, config: AstrBotConfig | None = None) -> None:
         """`config` 必须可省。
@@ -87,6 +126,8 @@ class Main(Star):
         super().__init__(context)
         self.config = config
         self._凭据 = 凭据仓库(self._数据目录())
+        # 指令落空时自己接住，别让消息落到模型手上——见 `_落空兜底` 的类。
+        self.爱完美.add_custom_filter(_落空兜底(self))
 
     def _数据目录(self) -> Path:
         from astrbot.core.utils.astrbot_path import get_astrbot_data_path
@@ -307,9 +348,8 @@ class Main(Star):
     async def PK(self, event: AstrMessageEvent, 目标: GreedyStr):
         """和另一个人比近期战绩。
 
-        对手从三处找：@ 组件、正文里的 `<@!id>`、以及绑定时记下的昵称。
-        QQ 官方平台上 @ 别人拿不到标识（适配器只把 @机器人 转成组件），
-        所以昵称那条是实际能走通的路径。
+        对手从三处找，参数优先：参数里含 steamid 就直接用它（对方不用绑定），
+        否则试 @ 组件，最后按本机记下的 PK 名字找。
         """
         自己 = event.get_sender_id()
         自己记录 = self._凭据.读取(自己)
@@ -318,8 +358,14 @@ class Main(Star):
             return
 
         参数 = str(目标).strip()
-        命中数, 对手记录 = self._找对手记录(event, 参数)
-        if not 对手记录:
+        # @ 组件那条要把自己排除掉，否则在群里 @ 一下就变成跟自己 PK。
+        # 文本要带上命令参数：官方适配器只把「@机器人」转成组件，@别人会原样
+        # 留在正文里。
+        at标识 = self._at标识(event, 参数)
+        对手steamid, 来源, 对手记录 = 取对手标识(参数, at标识, self._按昵称找)
+
+        if 来源 == 对手来源.没找到:
+            命中数 = self._按昵称找(参数)[0]
             if 命中数 > 1:
                 可选 = "、".join(
                     str(记录.get("昵称") or 记录["steamid"]) for 记录 in self._同名候选(参数)[:5]
@@ -327,18 +373,25 @@ class Main(Star):
                 yield event.plain_result(
                     f"有 {命中数} 个人叫「{参数}」，分不清是哪个。\n"
                     f"候选：{可选}\n"
-                    "让对方用 /爱完美 昵称 换个更特别的名字。"
+                    "直接发对方的 steamid64 最省事，或者让他用 /爱完美 昵称 "
+                    "换个更特别的名字。"
                 )
                 return
             yield event.plain_result(
-                "没找到要 PK 的人。可以直接发他的 PK 名字：\n"
-                "例：/爱完美 PK 小明\n"
-                "对方需要先绑定 steamid，并且用 /爱完美 昵称 设过名字。"
+                "没找到要 PK 的人。可以直接发他的 steamid64，我里面有就查：\n"
+                "例：/爱完美 PK 76561198159976336\n"
+                "也接受 Steam 个人资料页的网址。\n"
+                "发本机记下的 PK 名字也行，但对方得先绑定过。"
             )
             return
 
-        # 自己跟自己 PK 没有意义，而昵称可能与别人重名。
-        if str(对手记录.get("用户") or "") == 自己 and 自己:
+        # 自己跟自己 PK 没有意义。参数直接给 id 时也拦一下——昵称那条拦不住，
+        # 因为昵称可能重名，但同一个 id 一眼就能认出来。
+        if 对手steamid == 自己记录["steamid"]:
+            yield event.plain_result("不能跟自己 PK。")
+            return
+        # 昵称那条要额外看用户标识：可能查到的是自己那条记录
+        if 对手记录 and str(对手记录.get("用户") or "") == 自己 and 自己:
             yield event.plain_result("不能跟自己 PK。")
             return
 
@@ -351,7 +404,7 @@ class Main(Star):
                 return
 
             try:
-                对手数据, 对手统计 = await 读战绩数据(传输, 对手记录["steamid"])
+                对手数据, 对手统计 = await 读战绩数据(传输, 对手steamid)
             except Exception as exc:
                 logger.warning(f"[aiwm] PK 读对手战绩失败：{type(exc).__name__}: {exc}")
                 yield event.plain_result(f"读取对方的战绩失败：{exc}")
@@ -364,7 +417,11 @@ class Main(Star):
             return
 
         自己名 = self._显示名(str(自己记录.get("昵称") or ""), "你")
-        对手名 = self._显示名(str(对手记录.get("昵称") or ""), "对手")
+        # 参数直接给 id 时没有本机记下的昵称，就用接口返回的显示名——那是这人在
+        # 平台上的名字，总比「对手」两个字好。
+        对手名 = self._显示名(
+            str((对手记录 or {}).get("昵称") or 对手统计.get("昵称") or ""), "对手"
+        )
 
         # 逐项对比里用真实姓名，不用「甲／乙」。同一份提示里一处写「甲占优」
         # 一处写「老王 3 项」，模型得自己推断甲是老王——这层映射没有必要，
@@ -401,27 +458,15 @@ class Main(Star):
 
         yield event.plain_result(结果.completion_text or "模型没有返回内容。")
 
-    def _找对手记录(self, event: AstrMessageEvent, 参数: str) -> tuple[int, dict[str, Any] | None]:
-        """按可靠性依次找对手，返回 (按昵称命中的人数, 要用的记录)。
+    def _按昵称找(self, 参数: str) -> tuple[int, dict[str, Any] | None]:
+        """在本机记下的 PK 名字里找，返回 (命中人数, 要用的记录)。
 
-        标识那条先试（`aiwm/pk.py`），再按昵称找（`storage.按昵称找`）。
-        昵称命中的是**记录**而不是标识，所以查到之后直接用记录里的
-        `steamid`，不要再去拼一个用户标识出来。
+        只有本机绑定过的人在这里。参数直接给 steamid 或 @ 组件那两条路不经过
+        这里，所以对方没绑定也能 PK。
 
-        返回命中人数是给「有几个人叫这个名字」那条回复用的。对真实存在的
-        名字回一句「没找到」，等于告诉用户他没绑定。
+        命中人数是给「有几个人叫这个名字」那条回复用的。对真实存在的名字回
+        一句「没找到」，等于告诉用户他没绑定。
         """
-        对手标识 = 找对手(
-            event.get_messages(),
-            f"{参数} {getattr(event, 'message_str', '') or ''}",
-            自己=event.get_sender_id(),
-            机器人=self._机器人标识(event),
-        )
-        if 对手标识:
-            记录 = self._凭据.读取(对手标识)
-            if 记录:
-                return 0, 记录
-
         命中的 = self._凭据.按昵称找(参数)
         if len(命中的) == 1:
             return 1, 命中的[0]
@@ -429,6 +474,18 @@ class Main(Star):
             可选 = "、".join(str(记录.get("昵称") or 记录["steamid"]) for 记录 in 命中的[:5])
             logger.warning(f"[aiwm] PK 按昵称「{参数}」匹配到 {len(命中的)} 个人：{可选}")
         return len(命中的), None
+
+    def _at标识(self, event: AstrMessageEvent, 参数: str) -> str | None:
+        """从 @ 组件或正文里取被 @ 者的标识。取不到返回 `None`。
+
+        文本是命令参数与消息正文的拼接——正文里的 `<@!id>` 形式要靠它抠。
+        """
+        return 找对手(
+            event.get_messages(),
+            f"{参数} {getattr(event, 'message_str', '') or ''}",
+            自己=event.get_sender_id(),
+            机器人=self._机器人标识(event),
+        )
 
     def _同名候选(self, 参数: str) -> list[dict[str, Any]]:
         """按昵称找到的所有记录。给「有几个人叫这个名字」那条回复列候选用。"""

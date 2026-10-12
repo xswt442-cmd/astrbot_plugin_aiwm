@@ -17,33 +17,7 @@
   阈值各有注释说明为什么是这个数，规格与发布包的排除项见
   `docs/RELEASING.md`。
 
-## `__init__` 的 config 必须可省
-
-AstrBot 的 `star_manager` 这样注入配置：
-
-```python
-if plugin_config and metadata.star_cls_type:
-    metadata.star_cls = metadata.star_cls_type(context=self.context, config=plugin_config)
-elif metadata.star_cls_type:
-    metadata.star_cls = metadata.star_cls_type(context=self.context)
-```
-
-`plugin_config` 来自 `_conf_schema.json`。**仓库里没有这个文件时它读不到任何
-配置项，那一个 `if` 分支就不走，只传 `context`。** 所以写成
-`def __init__(self, context, config)` 会得到
-`TypeError: missing 1 required positional argument: 'config'`，插件整个加载
-不起来，而本地跑不了 `main.py`，本地也测不出来。
-
-正确写法是 `config: AstrBotConfig | None = None`。
-
-`test/test_main_wiring.py` 里有一条按 AstrBot 的实际调用方式绑定参数，只传
-self 与 context——它验的是参数能不能少传，而不只是签名长什么样。改回必需参数
-那条会直接抛 TypeError。
-
-**别删 `_conf_schema.json` 却留着必需 config**，也别在没配置文件时留着必需
-config。这两条是同一件事的两面。
-
-## 结构
+## config 为什么必须可省
 
 AstrBot 的 `star_manager` 这样注入配置：
 
@@ -68,16 +42,55 @@ self 与 context——它验的是参数能不能少传，而不只是签名长�
 **别删 `_conf_schema.json` 却留着必需 config**，也别在没配置文件时留着必需
 config。这两条是同一件事的两面。
 
+## 数据源是官匹，不是完美平台
+
+**输出里不能说「完美平台战绩」。** 接口挂在 `api.wmpvp.com` 下，但返回的是
+CS2 官方匹配的数据——三条实测证据在 `aiwm/来源.py`。
+
+说错了的代价很具体：用户拿自己的官匹数据一核对，发现对不上，以为插件坏了。
+段位同理，那是官匹的分数段，不是完美平台的段位名。
+
+完美自己的战绩在 `appengine.wmpvp.com` 那套接口上，要 accessToken，无凭据
+查不到。
+
+## 指令落空要自己接住
+
+`/爱完美 <没匹配上子命令的内容>`，`CommandGroupFilter.filter` 的
+`startswith` 返回 False，指令被跳过，**消息原样进模型**——模型收到的是一句
+普通提问，于是自己编。实测用户发 `/爱完美 <Steam 主页链接>`，模型回「打不开
+Steam，你发链接干嘛，考验我视力？」还自称「我又没权限爬Steam」。它并不在查
+Steam，它在编。
+
+所以指令组挂了 `_落空兜底`（`CustomFilter`）：只在真落空时
+`set_result` + `stop_event`。判据在 `aiwm/兜底.是否落空`，**必须与
+`CommandGroupFilter.startswith` 一致（字面前缀匹配）**，否则会吃掉正常指令。
+
+`aiwm/兜底.子命令名` 是手抄的别名清单，改 main.py 的指令或别名要跟着改——
+`test_main_wiring.py` 会核对，少一个就红（已经因此抓到过一次漏掉的
+`绑定steamid`）。
+
+## 模型不许编数据里没有的东西
+
+日志里模型把数据当结论编：「最近18连胜只是一场幻觉」「你永远不是该开第一枪
+的那个人」。看着犀利，其实依据一条都不在给它的文本里。
+
+三段提示词都写了同一条硬要求：**只说数据支撑得住的话，宁可少说一句也不要编
+一句**。危险的地方在于编出来的东西看起来很有道理，用户分辨不出来，还会照着
+改。
+
 ## 结构
 
 ```
-main.py             插件入口，指令组与指令
-aiwm/transport.py   完美接口的传输层：请求头、业务码
+main.py             插件入口，指令组、指令与落空兜底
+aiwm/transport.py   接口的传输层：请求头、业务码
 aiwm/battles.py     读战绩的编排：接口响应接上 stats
 aiwm/stats.py       战绩统计与文本汇总、逐项对比
 aiwm/match.py       「开一局」的对局设定：随机数与水平适配
 aiwm/prompts.py     锐评、开一局与 PK 的提示词（放这儿是为了能跑单测）
-aiwm/pk.py          PK 对手标识的解析
+aiwm/pk.py          从 @ 组件与正文里取被 @ 者的标识
+aiwm/pk_target.py   PK 对手从参数里怎么来：steamid / At / 昵称
+aiwm/兜底.py         指令落空的判据与提示
+aiwm/来源.py        这个接口给的是什么数据，以及为什么
 aiwm/storage.py     绑定记录与 steamid 提取校验
 test/               pytest 用例、字段核对规则、手工验证脚本
 docs/               更新日志与术语表
@@ -183,18 +196,21 @@ wheel 只服务赛事 demo 下载，与战绩查询无关。
 平台没理由开放「任意人 → 任意人的 steamid」，那是隐私。所有平台都只支持正向
 查询。所以这条路的正确做法是**让用户少抄一串数字**，不是加接口。
 
-## PK 的对手从消息里捡，再按昵称找
+## PK 的对手从参数里定
 
-`@` 在多数平台是消息组件，但 QQ 官方平台**只把「@机器人」转成组件**，@别人
-会原样留在正文里（`<@!openid>`）。而实测连这一条也不成立——被 @ 的人在事件里
-完全没有痕迹，正文里也没有 `<@!id>`。**QQ 官方平台上没有任何办法拿到另一个
-用户的标识。**
+对手三条路，**参数优先**：
 
-所以 `main._找对手记录` 有两条路径：先按标识找（`aiwm/pk.py`），再按昵称找
-（`storage.按昵称找`）。昵称路径是实际能走通的，必须留着。
+1. **参数里含 steamid64** —— 纯数字、Steam 主页网址、启动器参数都算。
+   对方不用绑定、也不用设 PK 名字。实测用户发了主页链接想 PK，但当时对手必须
+   先绑定，整件事没成——所以这条是主路。
+2. **`@` 组件** —— 多数平台会把 @ 转成组件。QQ 官方平台**只把「@机器人」转成
+   组件**，@别人会原样留在正文里（`<@!openid>`）；而实测连这一条也不成立，
+   被 @ 的人在事件里完全没有痕迹。所以这条只是碰运气。
+3. **本机记下的 PK 昵称** —— 前两条都不通时唯一能走通的路。
 
-昵称路径命中的是**记录**而不是标识，所以查到后直接用记录里的 `steamid`，
-不要试图拼一个用户标识出来。
+判断逻辑在 `aiwm/pk_target.取对手标识`，纯函数、能跑单测。注意 id 那条路拿到的
+`steamid` 和昵称那条路拿到的**记录**要分开：只有昵称那条才带用户标识，用来判
+「是不是跟自己 PK」。
 
 绑定时自动取的 `get_sender_name()` 在 QQ 官方给的是 **QQ 昵称而不是群昵称**，
 照那个名字往往点不到人，所以 `/爱完美 昵称` 必须存在，绑定时要提示。

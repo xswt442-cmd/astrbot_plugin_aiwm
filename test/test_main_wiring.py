@@ -101,8 +101,22 @@ class Test构造签名:
 class Test接线:
     # 注意 `ast.unparse` 会把字符串统一规范成单引号，断言里照这个写。
     def test_指令组名是爱完美(self):
+        """组名走 `_组名` 常量，兜底那个 filter 也靠它剥前缀——改一处要够到
+        帮助文本与 `aiwm/兜底.py`。"""
+        模块 = ast.parse(main源.read_text(encoding="utf-8"))
+        常量 = [
+            节点.value.value
+            for 节点 in 模块.body
+            if isinstance(节点, ast.Assign)
+            and getattr(节点.targets[0], "id", "") == "_组名"
+            and isinstance(节点.value, ast.Constant)
+        ]
+
+        assert 常量 == ["爱完美"]
+
+    def test_组名常量用在了指令组上(self):
         源码 = ast.unparse(_类树())
-        assert "@command_group('爱完美')" in 源码
+        assert "command_group(_组名)" in 源码
 
     def test_指令都挂在方法上(self):
         """所有 command 装饰器都要挂在某个方法上，不能散在模块顶层。"""
@@ -141,13 +155,18 @@ class Test接线:
 
     def test_PK_走昵称查找(self):
         """QQ 官方平台拿不到被 @ 的人的标识，昵称那条是实际能走通的路径。"""
-        源码 = _方法源码("_找对手记录")
-        assert "按昵称找" in 源码
+        assert "按昵称找" in _方法源码("_按昵称找")
 
-    def test_PK_用记录里的steamid(self):
-        """昵称命中的是记录不是标识，不要去拼一个用户标识出来。"""
+    def test_PK_参数优先于昵称(self):
+        """参数里含 steamid 就直接查——对方不用绑定。"""
+        源码 = _方法源码("PK")
+        assert "取对手标识" in 源码
+
+    def test_PK_用取到的steamid(self):
+        """id 那条路没有本机记录，昵称那条才有记录，所以要分开拿。"""
         源码 = ast.unparse(_类树())
-        assert "对手记录['steamid']" in 源码
+        assert "对手steamid" in 源码
+        assert "对手记录['steamid']" not in 源码
 
     def test_PK_自己跟自己要挡住(self):
         源码 = ast.unparse(_类树())
@@ -164,6 +183,36 @@ class Test接线:
         源码 = ast.unparse(_类树())
         assert "'plugin_data' / 'aiwm'" in 源码
         assert "ainong" not in 源码
+
+    def test_兜底的别名清单与指令一致(self):
+        """`aiwm.兜底.子命令名` 是手抄的，main.py 改了别名忘了改它，
+        用户打那个别名时就静默落空——而落空的表现是模型开始胡说，很难归因。"""
+        import ast as _ast
+
+        from aiwm.兜底 import 子命令名
+
+        树 = _ast.parse(main源.read_text(encoding="utf-8"))
+        实际: set[str] = set()
+        for 节点 in _ast.walk(树):
+            if not isinstance(节点, _ast.Call):
+                continue
+            # @爱完美.command("战绩", alias={...})
+            if not (isinstance(节点.func, _ast.Attribute) and 节点.func.attr == "command"):
+                continue
+            if not 节点.args or not isinstance(节点.args[0], _ast.Constant):
+                continue
+            名 = 节点.args[0].value
+            if not isinstance(名, str):
+                continue
+            实际.add(名)
+            for 关键字 in 节点.keywords:
+                if 关键字.arg != "alias":
+                    continue
+                for 元素 in getattr(关键字.value, "elts", []):
+                    if isinstance(元素, _ast.Constant) and isinstance(元素.value, str):
+                        实际.add(元素.value)
+
+        assert 实际 <= 子命令名, f"main.py 里有子命令没登记进兜底：{实际 - 子命令名}"
 
     def test_锐评与PK都拿当前对话的模型(self):
         """两个指令都要先取当前会话用的模型，不能写死一个。"""
