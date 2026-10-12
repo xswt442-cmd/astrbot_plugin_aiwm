@@ -19,6 +19,33 @@
   （`star_manager.py` 里的 `logo_fname`）。WebUI 通过一个 300 秒有效的文件
   token 拉图，所以体积要小——超过几百 KB 每次刷新都会重传。
 
+## `__init__` 的 config 必须可省
+
+**这条踩过，插件整个加载不起来，而本地跑不了 `main.py`，本地也测不出来。**
+
+AstrBot 的 `star_manager` 这样注入配置：
+
+```python
+if plugin_config and metadata.star_cls_type:
+    metadata.star_cls = metadata.star_cls_type(context=self.context, config=plugin_config)
+elif metadata.star_cls_type:
+    metadata.star_cls = metadata.star_cls_type(context=self.context)
+```
+
+`plugin_config` 来自 `_conf_schema.json`。**仓库里没有这个文件时它读不到任何
+配置项，那一个 `if` 分支就不走，只传 `context`。** 所以写成
+`def __init__(self, context, config)` 会得到
+`TypeError: missing 1 required positional argument: 'config'`。
+
+正确写法是 `config: AstrBotConfig | None = None`。
+
+`test/test_main_wiring.py` 里有一条按 AstrBot 的实际调用方式绑定参数，只传
+self 与 context——它验的是参数能不能少传，而不只是签名长什么样。改回必需参数
+那条会直接抛 TypeError。
+
+**别删 `_conf_schema.json` 却留着必需 config**，也别在没配置文件时留着必需
+config。这两条是同一件事的两面。
+
 ## 结构
 
 ```

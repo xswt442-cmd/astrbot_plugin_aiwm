@@ -70,9 +70,14 @@ class Main(Star):
     def 爱完美(self):
         """完美竞技平台 CS2 战绩查询。指令都在这个组下，不占用通用名字。"""
 
-    def __init__(self, context: Context, config: AstrBotConfig) -> None:
-        # config 目前没有配置项，但 AstrBot 按签名注入配置，去掉这个参数
-        # 插件就加载不起来。等真有配置项时再用它。
+    def __init__(self, context: Context, config: AstrBotConfig | None = None) -> None:
+        """`config` 必须可省。
+
+        AstrBot 的 `star_manager` 在 `if plugin_config and ...:` 分支里才把配置
+        传进来，仓库没有 `_conf_schema.json` 时它读不到任何配置项，那一个分支
+        不走，于是只传 context。声明成必需参数会 `TypeError: missing 1
+        required positional argument: 'config'`，插件整个加载不起来。
+        """
         super().__init__(context)
         self.config = config
         self._凭据 = 凭据仓库(self._数据目录())
