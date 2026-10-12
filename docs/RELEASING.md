@@ -62,6 +62,15 @@ AstrBot 插件市场从仓库的 `metadata.yaml` 读插件信息，版本号也�
 里的 `logo_fname`），不要另建目录。WebUI 通过一个 300 秒有效的文件 token 拉图，
 所以体积要小——超过几百 KB 每次刷新都会重传。
 
+规格是 256×256、RGB 无 alpha，与爱农一致。
+
+**改图标改 `icon/aiwm-icon.png`，然后跑 `python test/做图标.py` 重新生成。**
+脚本会缩到 92%（让皇冠尖角在圆形裁切下不被切掉）并抠掉源图的方形底。手改
+`logo.png` 的话，下次重新生成就被覆盖了。
+
+`test/做图标.py` 需要 Pillow，它不在 `requirements.txt` 里——那是给 AstrBot
+装的运行时清单，而做图标是手工操作。
+
 ## 市场分类
 
 `category` 填市场自己定的那几个中文，「战绩查询」这类归「娱乐」。填错不影响

@@ -75,6 +75,43 @@ def test_图标在根目录且体积不大():
     assert 图标.stat().st_size < 200 * 1024, f"logo.png 有 {图标.stat().st_size} 字节，太大"
 
 
+def test_图标尺寸与色彩模式():
+    """规格与爱农一致：256×256、RGB 无 alpha。
+
+    读 PNG 头而不是用 Pillow：PNG 的 IHDR 块固定在偏移 8，宽度与高度是
+    大端 32 位整数；第 25 个字节是色彩类型，2 表示 RGB。为这两件事引一个
+    图像库不值得——`test/做图标.py` 才需要 Pillow，而它是手工脚本。
+    """
+    图标 = 仓库根 / "logo.png"
+    头 = 图标.read_bytes()[:26]
+
+    assert 头[:8] == b"\x89PNG\r\n\x1a\n", "不是 PNG 文件"
+    assert 头[12:16] == b"IHDR", "第一个块不是 IHDR"
+
+    宽 = int.from_bytes(头[16:20], "big")
+    高 = int.from_bytes(头[20:24], "big")
+    assert (宽, 高) == (256, 256), f"logo.png 是 {宽}×{高}，应为 256×256"
+
+    色彩类型 = 头[25]
+    # 2 = RGB 无 alpha，6 = RGBA。带 alpha 的图在深色背景上会露出方角。
+    assert 色彩类型 == 2, f"logo.png 的色彩类型是 {色彩类型}，应为 2（RGB 无 alpha）"
+
+
+def test_源图在仓库里且够大():
+    """`icon/` 存着源图。
+
+    改图标时改源图再跑 `test/做图标.py`，不手改 logo.png——手改的那份下次
+    重新生成就被覆盖了。
+    """
+    源 = 仓库根 / "icon" / "aiwm-icon.png"
+    assert 源.exists(), "缺 icon/aiwm-icon.png，重新生成 logo.png 需要它"
+
+    头 = 源.read_bytes()[:24]
+    宽 = int.from_bytes(头[16:20], "big")
+    高 = int.from_bytes(头[20:24], "big")
+    assert min(宽, 高) >= 256, f"源图 {宽}×{高}，比 256 还小的话放大后会糊"
+
+
 def test_声明的AstrBot版本区间合理():
     匹配 = re.search(r'astrbot_version:\s*"?([^"\n]+)"?', _元数据())
     assert 匹配, "metadata.yaml 里找不到 astrbot_version"
