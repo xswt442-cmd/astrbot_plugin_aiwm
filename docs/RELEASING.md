@@ -62,7 +62,7 @@ AstrBot 插件市场从仓库的 `metadata.yaml` 读插件信息，版本号也�
 里的 `logo_fname`），不要另建目录。WebUI 通过一个 300 秒有效的文件 token 拉图，
 所以体积要小——超过几百 KB 每次刷新都会重传。
 
-规格是 256×256、RGB 无 alpha，与爱农一致。
+规格是 256×256、RGB 无 alpha。
 
 **改图标改 `icon/aiwm-icon.png`，然后跑 `python test/做图标.py` 重新生成。**
 脚本会缩到 92%（让皇冠尖角在圆形裁切下不被切掉）并抠掉源图的方形底。手改
@@ -71,8 +71,14 @@ AstrBot 插件市场从仓库的 `metadata.yaml` 读插件信息，版本号也�
 `test/做图标.py` 需要 Pillow，它不在 `requirements.txt` 里——那是给 AstrBot
 装的运行时清单，而做图标是手工操作。
 
-源图 1.8 MB，是开发时用的。**部署与发布包要排掉 `icon/`**，否则装插件时带上
-一张用不上的大图。仓库里要留着它，改图标时要用。
+源图 1.8 MB，是改图标时用的，装插件用不上。`.gitattributes` 里的
+`icon/ export-ignore` 让它不进 `git archive` 出的发布包，仓库里照常留着。
+
+要看发布包会带哪些文件：
+
+```sh
+git archive --format=tar HEAD | tar -tf -
+```
 
 ## 市场分类
 
