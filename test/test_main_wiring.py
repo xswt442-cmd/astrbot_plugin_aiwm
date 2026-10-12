@@ -171,6 +171,31 @@ class Test接线:
             源码 = _方法源码(名)
             assert "get_current_chat_provider_id" in 源码, f"{名} 没有取当前对话用的模型"
 
+    def test_开一局也在取当前对话的模型(self):
+        源码 = _方法源码("开一局")
+
+        assert "get_current_chat_provider_id" in 源码
+
+    def test_开一局用随机种子(self):
+        """每次发都得是新的一局。固定种子会让人看到重复的局。"""
+        源码 = _方法源码("开一局")
+
+        assert "random.Random()" in 源码
+        assert "random.seed" not in 源码
+
+    def test_开一局先给设定再给复盘(self):
+        """模型写崩了，至少还有这一局的数字可看。"""
+        源码 = _方法源码("开一局")
+
+        assert 源码.count("设定文本") >= 2, "设定文本应该在提示与输出里各用一次"
+
+    def test_开一局读战绩失败不影响整条指令(self):
+        """绑定着但接口挂了就退回「无历史数据」那一档，别让这条指令整个用不了。"""
+        源码 = _方法源码("开一局")
+
+        assert "except Exception" in 源码
+        assert "统计 = None" in 源码
+
     def test_PK_提示里没有甲乙与真实姓名混用(self):
         """已算好的对比与占优项数必须用同一套名字。
 

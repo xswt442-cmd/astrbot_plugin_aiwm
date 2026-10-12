@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from typing import Any
 
@@ -18,8 +19,9 @@ from astrbot.core.star.filter.command import GreedyStr
 # 全部在模块顶层导入。插件加载时就把整个包摸清：少文件、依赖缺失都在启动
 # 阶段报错，而不是等用户发了指令才在懒加载里抛模块不存在。
 from .aiwm.battles import 读战绩数据
+from .aiwm.match import 开局设定, 设定文本
 from .aiwm.pk import 找对手
-from .aiwm.prompts import PK提示, 锐评提示
+from .aiwm.prompts import PK提示, 开局提示, 锐评提示
 from .aiwm.stats import 占优项数, 对比文本, 对比要点
 from .aiwm.storage import 凭据仓库, 取有效steamid
 from .aiwm.transport import 业务错误, 完美传输
@@ -41,6 +43,10 @@ _帮助文本 = """爱完美 · 完美竞技平台 CS2 战绩
 /爱完美 战绩
   近期战绩：段位与综合分、胜率、KD、Rating、ADR、KAST、RWS、
   爆头率与首杀率、常用地图、常用武器与击杀分布、多杀次数、最近十场评分。
+
+/爱完美 开一局
+  随机生成一局，让模型推演过程与结果。数字是编的，会写明这一点。
+  绑定过的话推演贴近你的实际水平，没绑定按中等水平来。
 
 /爱完美 锐评
   让模型基于上面的数据写一段锐评。会先给一句称号，再分别说打得好、
@@ -252,6 +258,50 @@ class Main(Star):
             return
 
         yield event.plain_result(结果.completion_text or "模型没有返回内容。")
+
+    @爱完美.command("开一局", alias={"开局", "来一局"})
+    async def 开一局(self, event: AstrMessageEvent):
+        """随机生成一局，让模型推演过程与结果。
+
+        数字全是随机生成的，只贴着玩家的真实水平走个形。绑定过的话推演会
+        贴近他的实际表现，没绑定就按中等水平来。
+        """
+        用户 = event.get_sender_id()
+        记录 = self._凭据.读取(用户)
+
+        统计 = None
+        if 记录:
+            # 开一局不需要拿到完整战绩，接口失败就退回「无历史数据」那一档，
+            # 不要因为查不到战绩就让这条指令整个用不了。
+            try:
+                async with 完美传输() as 传输:
+                    _, 统计 = await 读战绩数据(传输, 记录["steamid"])
+            except Exception as exc:
+                logger.info(f"[aiwm] 开一局读战绩失败，按无历史数据推演：{exc}")
+                统计 = None
+
+        设定 = 开局设定(random.Random(), 统计)
+
+        try:
+            提供方 = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
+        except Exception as exc:
+            yield event.plain_result(f"取不到当前对话用的模型：{exc}")
+            return
+
+        try:
+            结果 = await self.context.tool_loop_agent(
+                event=event,
+                chat_provider_id=提供方,
+                prompt=开局提示(设定文本(设定)),
+                max_steps=8,
+            )
+        except Exception as exc:
+            logger.warning(f"[aiwm] 开一局失败：{type(exc).__name__}: {exc}")
+            yield event.plain_result(f"开一局失败：{exc}")
+            return
+
+        # 设定先给用户看，模型写崩了至少还有这一局的数字。
+        yield event.plain_result(f"{设定文本(设定)}\n\n{结果.completion_text or ''}")
 
     @爱完美.command("PK", alias={"pk", "对战"})
     async def PK(self, event: AstrMessageEvent, 目标: GreedyStr):
