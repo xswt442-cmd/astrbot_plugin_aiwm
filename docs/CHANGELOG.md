@@ -1,5 +1,10 @@
 # 更新日志
 
+## v0.1.5
+
+- 修 v0.1.4 的加载失败：兜底过滤器要用 `@custom_filter` 装饰器挂，
+  `self.爱完美.add_custom_filter(...)` 会报 AttributeError。
+
 ## v0.1.4
 
 - `/爱完美 PK` 不用等对方绑定了：直接发 steamid64 或含它的网址就能比。
