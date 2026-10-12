@@ -7,11 +7,15 @@
 from __future__ import annotations
 
 import ast
+import inspect
 from pathlib import Path
 
 import pytest
 
 main源 = Path(__file__).resolve().parent.parent / "main.py"
+
+# 参数没有默认值时用它占位，好与「默认值就是 None」区分开。
+_无 = object()
 
 
 def _树() -> ast.Module:
@@ -39,6 +43,59 @@ def _方法源码(名: str) -> str:
     提到了某个方法名），`"... not in 片段"` 这种断言就会误判。
     """
     return ast.unparse(_方法(名))
+
+
+def _默认值(方法: ast.FunctionDef, 位置: int):
+    """取第 `位置` 个位置参数的默认值，没有就返回 `_无`。"""
+    数量 = len(方法.args.defaults)
+    起点 = len(方法.args.args) - 数量
+    if 位置 < 起点:
+        return _无
+    return ast.literal_eval(方法.args.defaults[位置 - 起点])
+
+
+def _有默认值的参数(方法: ast.FunctionDef) -> set[str]:
+    起点 = len(方法.args.args) - len(方法.args.defaults)
+    return {项.arg for 项 in 方法.args.args[起点:]}
+
+
+class Test构造签名:
+    """`__init__` 的参数签名错了，插件整个加载不起来。
+
+    AstrBot 的 `star_manager` 在 `if plugin_config and metadata.star_cls_type:`
+    分支里才把配置传进来。没有 `_conf_schema.json` 时它读不到配置项，那一个
+    `if` 分支不走，只传 context。所以 config 必须可省——这条踩过：声明成必需
+    参数时报 `TypeError: missing 1 required positional argument: 'config'`，
+    容器里插件直接加载失败，而本地跑不了 main.py 根本发现不了。
+    """
+
+    def test_必需参数只有context(self):
+        构造 = _方法("__init__")
+        必填 = [项.arg for 项 in 构造.args.args[1:] if 项.arg not in _有默认值的参数(构造)]
+
+        assert 必填 == ["context"]
+
+    def test_只传context能构造出来(self):
+        """真正按 AstrBot 的调用方式绑定一次参数。
+
+        比看签名可靠——它验的是参数能不能少传，而不只是签名长什么样。
+        """
+        构造 = _方法("__init__")
+        参数 = [
+            inspect.Parameter(
+                项.arg,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=(
+                    inspect.Parameter.empty if _默认值(构造, 位置) is _无 else _默认值(构造, 位置)
+                ),
+            )
+            for 位置, 项 in enumerate(构造.args.args)
+        ]
+
+        # self 与 context，不传 config —— 这就是没有配置文件时 AstrBot 的调用
+        绑定 = inspect.Signature(参数).bind(object(), object())
+
+        assert "config" not in 绑定.arguments
 
 
 class Test接线:
