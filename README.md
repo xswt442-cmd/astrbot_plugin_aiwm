@@ -20,7 +20,7 @@ ADR（每回合平均伤害）、KAST（每回合有贡献的比例）、RWS（�
 
 在 AstrBot 的插件市场里搜「爱完美」，或手动把仓库放到 `data/plugins/astrbot_plugin_aiwm`。
 
-只依赖 `aiohttp`，不需要浏览器侧车，也不需要额外服务。
+只依赖 `aiohttp`，不需要额外服务。
 
 ## 配置
 

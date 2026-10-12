@@ -8,40 +8,42 @@
   import 不到。
 - 指令全在 `爱完美` 指令组下（`/爱完美 战绩`），不占用通用名字。改动指令时
   提示文本里的示例要一起改。
-- `requirements.txt` **手写**，不要用 `uv export` 生成。它会把每个包钉成
-  `==`，而 AstrBot 核心给这些包装了版本护栏，插件若要求精确版本，pip 装不上。
-  约束由 `test/test_requirements.py` 钉住（不能有 `==`、直接依赖要与
-  pyproject 对得上、下界不能比核心松）。加了依赖要两边一起改。
+- `requirements.txt` **手写**，理由与检查项见 `docs/RELEASING.md`。
 - 网络请求只用 `aiohttp`。
 - 持久化数据放 AstrBot 的 `data/plugin_data/aiwm/`，不放插件目录。
 - 凭据不写日志、不进异常消息、不进提交。解绑时删文件，不保留。
-- 插件图标是根目录的 `logo.png`，文件名与位置都是 AstrBot 硬编码的
-  （`star_manager.py` 里的 `logo_fname`），不能另建目录。WebUI 通过一个
-  300 秒有效的文件 token 拉图，所以体积要小——超过几百 KB 每次刷新都会重传。
-  规格是 256×256、RGB 无 alpha，与爱农一致。
 - **改图标改 `icon/aiwm-icon.png` 源图，然后跑 `python test/做图标.py`**，
-  不要手改 `logo.png`——手改的那份下次重新生成就被覆盖了。
-
-## 图标为什么不是简单缩放
-
-源图是 1254×1254 的方形徽章，AstrBot 的插件列表把图标裁成圆形显示。直接缩到
-256 会切掉皇冠左右两个尖角与底部蓝钻，所以 `做图标.py` 做两件事：
-
-1. **图案缩到画布的 92%**。100% 铺满会被圆切掉，85% 又显小——92% 是试出来的。
-2. **把源图的方形深蓝底抠成透明**，四周换成画布色。不然圆形裁切后露出一圈
-   方形硬边。
-
-抠背景按亮度设阈值（r+g+b 共 130，两端各留 45 的过渡带）。实测源图背景在
-53 到 122 之间，金饰暗面也有 150 上下，所以阈值不能高——调到 168 会把金饰
-暗面一起抠掉，皇冠与盾牌的金框会变暗发闷。
-
-`test_metadata.py` 里有两条钉住规格，用标准库读 PNG 头（IHDR 块在偏移 8，
-色彩类型在第 25 字节）——为这两件事引 Pillow 不值得，`做图标.py` 才需要它，
-而那是手工脚本。
+  不手改 `logo.png`——手改的那份下次重新生成就被覆盖了。脚本里的比例、亮度
+  阈值各有注释说明为什么是这个数，规格与发布包的排除项见
+  `docs/RELEASING.md`。
 
 ## `__init__` 的 config 必须可省
 
-**这条踩过，插件整个加载不起来，而本地跑不了 `main.py`，本地也测不出来。**
+AstrBot 的 `star_manager` 这样注入配置：
+
+```python
+if plugin_config and metadata.star_cls_type:
+    metadata.star_cls = metadata.star_cls_type(context=self.context, config=plugin_config)
+elif metadata.star_cls_type:
+    metadata.star_cls = metadata.star_cls_type(context=self.context)
+```
+
+`plugin_config` 来自 `_conf_schema.json`。**仓库里没有这个文件时它读不到任何
+配置项，那一个 `if` 分支就不走，只传 `context`。** 所以写成
+`def __init__(self, context, config)` 会得到
+`TypeError: missing 1 required positional argument: 'config'`，插件整个加载
+不起来，而本地跑不了 `main.py`，本地也测不出来。
+
+正确写法是 `config: AstrBotConfig | None = None`。
+
+`test/test_main_wiring.py` 里有一条按 AstrBot 的实际调用方式绑定参数，只传
+self 与 context——它验的是参数能不能少传，而不只是签名长什么样。改回必需参数
+那条会直接抛 TypeError。
+
+**别删 `_conf_schema.json` 却留着必需 config**，也别在没配置文件时留着必需
+config。这两条是同一件事的两面。
+
+## 结构
 
 AstrBot 的 `star_manager` 这样注入配置：
 
