@@ -309,8 +309,8 @@ class Main(Star):
                 max_steps=8,
             )
         except Exception as exc:
-            logger.warning(f"[aiwm] 锐评失败：{type(exc).__name__}: {exc}")
-            yield event.plain_result(f"锐评失败：{exc}")
+            logger.warning(f"[aiwm] 锐评调用模型失败：{type(exc).__name__}: {exc}")
+            yield event.plain_result(f"调用模型失败：{exc}")
             return
 
         yield event.plain_result(结果.completion_text or "模型没有返回内容。")
@@ -352,8 +352,8 @@ class Main(Star):
                 max_steps=8,
             )
         except Exception as exc:
-            logger.warning(f"[aiwm] 开一局失败：{type(exc).__name__}: {exc}")
-            yield event.plain_result(f"开一局失败：{exc}")
+            logger.warning(f"[aiwm] 开一局调用模型失败：{type(exc).__name__}: {exc}")
+            yield event.plain_result(f"调用模型失败：{exc}")
             return
 
         # 设定先给用户看，模型写崩了至少还有这一局的数字。
@@ -467,8 +467,10 @@ class Main(Star):
                 max_steps=8,
             )
         except Exception as exc:
-            logger.warning(f"[aiwm] PK 失败：{type(exc).__name__}: {exc}")
-            yield event.plain_result(f"PK 失败：{exc}\n\n两人的数据：\n\n{自己数据}\n\n{对手数据}")
+            logger.warning(f"[aiwm] PK 调用模型失败：{type(exc).__name__}: {exc}")
+            yield event.plain_result(
+                f"调用模型失败：{exc}\n\n两人的数据：\n\n{自己数据}\n\n{对手数据}"
+            )
             return
 
         yield event.plain_result(结果.completion_text or "模型没有返回内容。")
