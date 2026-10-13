@@ -387,3 +387,52 @@ def _未绑定读取(函数: ast.AsyncFunctionDef | ast.FunctionDef) -> list[tup
 
     扫(函数.body)
     return 报告
+
+
+def _帮助块() -> str:
+    文本 = main源.read_text(encoding="utf-8")
+    起点 = 文本.index('_帮助文本 = """') + len('_帮助文本 = """')
+    return 文本[起点 : 文本.index('"""', 起点)]
+
+
+def _正式指令名() -> set[str]:
+    """`@爱完美.command("x")` 声明的正式指令名，不含别名。"""
+    出: set[str] = set()
+    for 节点 in ast.walk(_树()):
+        if not isinstance(节点, ast.Call):
+            continue
+        if not (isinstance(节点.func, ast.Attribute) and 节点.func.attr == "command"):
+            continue
+        if not 节点.args or not isinstance(节点.args[0], ast.Constant):
+            continue
+        if isinstance(节点.args[0].value, str):
+            出.add(节点.args[0].value)
+    return 出
+
+
+class Test帮助文案:
+    def test_每个指令都在帮助里(self):
+        """帮助漏一条，用户就只能靠猜或问。
+
+        只查正式指令名：别名是给习惯写法兜底的，不必逐条列进帮助。
+        """
+        缺 = sorted(名 for 名 in _正式指令名() if f"/爱完美 {名}" not in _帮助块())
+        assert not 缺, f"帮助文本里没列这些指令：{缺}"
+
+    def test_帮助首行是产品名加游戏名(self):
+        assert _帮助块().lstrip().startswith("爱完美 · ")
+
+    def test_说清数据来自官匹(self):
+        """说成「完美平台战绩」，用户拿官匹数据一核对会以为插件坏了。"""
+        帮助块 = _帮助块()
+
+        assert "数据来自" in 帮助块
+        assert "官匹" in 帮助块
+        assert "不是完美竞技平台" in 帮助块
+
+    def test_说明自然语言也能用(self):
+        assert "直接问模型" in _帮助块()
+
+    def test_开一局说明是推演(self):
+        """用户看到一串 K/D/A 分不出真假，帮助里要先说清楚。"""
+        assert "推演" in _帮助块()
