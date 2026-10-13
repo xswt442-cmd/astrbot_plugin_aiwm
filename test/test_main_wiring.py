@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import re
 from pathlib import Path
 
 import pytest
@@ -116,7 +117,25 @@ class Test接线:
 
     def test_组名常量用在了指令组上(self):
         源码 = ast.unparse(_类树())
-        assert "command_group(_组名)" in 源码
+        assert "command_group(_组名" in 源码
+
+    def test_组别名带上斜杠(self):
+        """QQ 官方的 At 唤醒分支不剥 message_str 里的 `/`。
+
+        那条分支只置 `wake_prefix = ""`，于是 `@机器人 /爱完美 战绩` 的
+        message_str 仍是 `/爱完美 战绩`，组名 `爱完美` 匹配不上，整条指令
+        静默失败。加一个带斜杠的组别名，两种写法都能进。
+        """
+        # `ast.unparse` 把字符串规范成单引号，所以这里按源码文本查。
+        assert "_组别名" in ast.unparse(_类树()), "指令组没带组别名"
+        模块 = ast.parse(main源.read_text(encoding="utf-8"))
+        别名 = [
+            节点.value
+            for 节点 in 模块.body
+            if isinstance(节点, ast.Assign) and getattr(节点.targets[0], "id", "") == "_组别名"
+        ]
+        assert 别名, "缺 _组别名，QQ 官方上带斜杠的写法会静默失败"
+        assert "_组名" in ast.unparse(别名[0]), "组别名应该是 /组名，写死字符串会漏改"
 
     def test_指令都挂在方法上(self):
         """所有 command 装饰器都要挂在某个方法上，不能散在模块顶层。"""
@@ -292,3 +311,79 @@ class Test兜底过滤器挂法:
     def test_命中分支要掐掉事件(self):
         """命中落空必须 stop_event，否则消息会漏给模型让它开始编。"""
         assert "event.stop_event()" in ast.unparse(self._兜底filter())
+
+
+class Test源码卫生:
+    """两类只在运行时才炸、本地又跑不到的写法。
+
+    漏 f 前缀的字符串**语法完全合法**，只有用户看到字面量 `{名字}` 时才知道
+    出事了；except 里读 try 体内才绑定的变量同样合法，只有异常真发生时才
+    `UnboundLocalError`。
+    """
+
+    def test_没有漏f前缀的字符串(self):
+        占位 = re.compile(r"\{[^{}\n]{1,40}\}")
+        漏 = [
+            (节点.lineno, 命中.group(0))
+            for 节点 in ast.walk(_树())
+            if isinstance(节点, ast.Constant) and isinstance(节点.value, str)
+            for 命中 in 占位.finditer(节点.value)
+        ]
+        assert not 漏, f"这些字符串里的占位符不会被替换（漏了 f 前缀）：{漏}"
+
+    def test_except里不读try体内才绑定的变量(self):
+        问题 = []
+        for 函数 in [
+            节点
+            for 节点 in ast.walk(_树())
+            if isinstance(节点, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]:
+            for 函数名, 行号, 名字 in _未绑定读取(函数):
+                问题.append(f"{函数名} 第{行号}行 except 里读了 {sorted(名字)}")
+        assert not 问题, "\n".join(问题)
+
+
+def _绑定的(节点们: list[ast.AST]) -> set[str]:
+    出: set[str] = set()
+    for 节点 in 节点们:
+        for 子 in ast.walk(节点):
+            if isinstance(子, ast.Name) and isinstance(子.ctx, ast.Store):
+                出.add(子.id)
+            if isinstance(子, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                出.add(子.name)
+            if isinstance(子, ast.ExceptHandler) and 子.name:
+                出.add(子.name)
+    return 出
+
+
+def _未绑定读取(函数: ast.AsyncFunctionDef | ast.FunctionDef) -> list[tuple[str, int, set]]:
+    """找出 `except` 里读了「同一个 try 体内才绑定」的变量的地方。"""
+    报告: list[tuple[str, int, set]] = []
+    已绑 = {参数.arg for 参数 in 函数.args.args}
+
+    def 扫(节点们: list[ast.stmt]) -> None:
+        for 节点 in 节点们:
+            if isinstance(节点, ast.Try):
+                体内 = _绑定的(节点.body)
+                for 处理 in 节点.handlers:
+                    读到 = {
+                        子.id
+                        for 子 in ast.walk(处理)
+                        if isinstance(子, ast.Name) and isinstance(子.ctx, ast.Load)
+                    }
+                    可疑 = (读到 & 体内) - 已绑
+                    if 可疑:
+                        报告.append((函数.name, 节点.lineno, 可疑))
+                扫(节点.body)
+                for 处理 in 节点.handlers:
+                    扫(处理.body)
+                    已绑.update(_绑定的(处理.body))
+                扫(节点.orelse)
+                扫(节点.finalbody)
+                已绑.update(体内)
+            elif hasattr(节点, "body") and isinstance(节点.body, list):
+                已绑.update(_绑定的([节点]))
+                扫(节点.body)
+
+    扫(函数.body)
+    return 报告

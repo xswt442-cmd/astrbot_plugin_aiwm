@@ -36,6 +36,12 @@ from .aiwm.兜底 import 以组名开头, 取落空参数, 是否落空, 落空�
 # 指令组名。改这里要同时改 `_帮助文本` 的开头与 `aiwm/兜底.py` 的取参函数。
 _组名 = "爱完美"
 
+# 组名别名。QQ 官方适配器在「@机器人 + 指令」这条路径上走的是 At 唤醒分支，
+# 那条分支只置 `wake_prefix = ""`，**不剥掉 message_str 里的 `/`**——只有
+# startswith 分支才剥。于是 message_str 仍是 `/爱完美 战绩`，组名 `爱完美`
+# 匹配不上，整条指令静默失败。加一个带斜杠的别名，两种写法都能进。
+_组别名 = {f"/{_组名}"}
+
 # PK 名字要念在提示里，太长挤版面。
 _昵称上限 = 16
 
@@ -111,9 +117,7 @@ class _落空兜底(CustomFilter):
         if not 以组名开头(文本, _组名):
             return True
         if 是否落空(文本, _组名):
-            event.set_result(
-                MessageEventResult().message(落空提示(取落空参数(文本, _组名)))
-            )
+            event.set_result(MessageEventResult().message(落空提示(取落空参数(文本, _组名))))
             event.stop_event()
         return True
 
@@ -124,7 +128,7 @@ class Main(Star):
     # 别写成 `self.爱完美.add_custom_filter(...)`——`self.爱完美` 是
     # `RegisteringCommandable`，它没有那个方法，会在加载时报 AttributeError。
     @custom_filter(_落空兜底)
-    @command_group(_组名)
+    @command_group(_组名, alias=_组别名)
     def 爱完美(self):
         """CS2 战绩查询。指令都在这个组下，不占用通用名字。"""
 
