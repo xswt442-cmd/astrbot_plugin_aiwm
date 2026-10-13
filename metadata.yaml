@@ -1,6 +1,6 @@
 name: astrbot_plugin_aiwm
 display_name: 爱完美
-short_desc: 查 CS2 战绩，让模型替你锐评。
+short_desc: 查 CS2 官方匹配战绩，让模型替你锐评。
 desc: 绑定一个 SteamID64 就能查 CS2 战绩，让大模型做锐评和玩家画像。
 version: v0.1.6
 author: xswt442-cmd

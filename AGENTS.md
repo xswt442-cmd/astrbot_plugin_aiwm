@@ -64,6 +64,11 @@ Steam，它在编。
 所以指令组挂了 `_落空兜底`（`CustomFilter`）：只在真落空时
 `set_result` + `stop_event`。判据在 `aiwm/兜底.是否落空`，**必须与
 `CommandGroupFilter.startswith` 一致（字面前缀匹配）**，否则会吃掉正常指令。
+`.filter` 的返回值语义是「这条消息我管不管」，不是「命中没有」，**所有出口都必须
+`return True`**：写成「命中返回 False」会让整个指令组失效。
+
+组名另外挂了 `_组别名 = {f"/{_组名}"}`：QQ 官方的 At 唤醒分支不剥 `message_str`
+里的 `/`，没有这个别名时 `@机器人 /爱完美 战绩` 整条指令静默失败。
 
 `aiwm/兜底.子命令名` 是手抄的别名清单，改 main.py 的指令或别名要跟着改——
 `test_main_wiring.py` 会核对，少一个就红（已经因此抓到过一次漏掉的
