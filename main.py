@@ -31,7 +31,7 @@ from .aiwm.prompts import PK提示, 开局提示, 锐评提示
 from .aiwm.stats import 占优项数, 对比文本, 对比要点
 from .aiwm.storage import 凭据仓库, 取有效steamid
 from .aiwm.transport import 业务错误, 完美传输
-from .aiwm.兜底 import 取落空参数, 是否落空, 落空提示
+from .aiwm.兜底 import 以组名开头, 取落空参数, 是否落空, 落空提示
 
 # 指令组名。改这里要同时改 `_帮助文本` 的开头与 `aiwm/兜底.py` 的取参函数。
 _组名 = "爱完美"
@@ -96,15 +96,25 @@ class _落空兜底(CustomFilter):
 
     只在真落空时 `set_result` + `stop_event`：前者把提示词放进结果链让适配器
     发出去，后者终止事件传播，免得消息继续走到模型。
+
+    `filter` 的返回值语义是「这条消息我管不管」，**不是**「我有没有命中」——
+    `CommandGroupFilter.filter` 里`if not self.custom_filter_ok(...): return False`，
+    返回 False 会把整个指令组毙掉。所以所有出口都return True：不归我管就
+    立刻放行（这一步不能省，见 `aiwm.兜底.以组名开头`），命中就自己给结果。
+    写反的后果：正常指令没反应，或者别人的消息被误掐——两个都实际发生过。
     """
 
     def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
         文本 = getattr(event, "message_str", "") or ""
-        if not 是否落空(文本, _组名):
-            return False
-
-        event.set_result(MessageEventResult().message(落空提示(取落空参数(文本, _组名))))
-        event.stop_event()
+        # 这条过滤器对**每一条消息**都会跑（CommandGroupFilter 先跑
+        # custom_filter_ok 再检查组名），所以第一件事是判断关不关我事。
+        if not 以组名开头(文本, _组名):
+            return True
+        if 是否落空(文本, _组名):
+            event.set_result(
+                MessageEventResult().message(落空提示(取落空参数(文本, _组名)))
+            )
+            event.stop_event()
         return True
 
 

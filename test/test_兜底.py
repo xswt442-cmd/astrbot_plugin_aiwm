@@ -16,7 +16,13 @@ from __future__ import annotations
 
 import pytest
 
-from aiwm.兜底 import 取落空参数, 子命令名, 是否落空, 落空提示
+from aiwm.兜底 import (
+    以组名开头,
+    取落空参数,
+    子命令名,
+    是否落空,
+    落空提示,
+)
 
 
 class Test取落空参数:
@@ -128,8 +134,36 @@ class Test该拦不该拦:
     def test_别的插件的指令不算本组(self):
         """`/爱农 开一局` 是另一个插件的，不能被这里抢走。
 
-        `取落空参数` 只剥本组名前缀，不认得别的组名，所以非本组的消息会原样
-        返回——但它也不会来问这个 filter：`CommandGroupFilter.startswith`
-        根本没匹配上，`custom_filter_ok` 压根不会被调用。
+        注意：这个 filter **会**被调用。`CommandGroupFilter.filter` 的执行
+        顺序是先跑 `custom_filter_ok()`、之后才检查组名是否匹配，所以挂在
+        指令组上的过滤器对每一条消息都执行。
+        原实现里 `取落空参数` 对非本组消息「原样返回」，于是
+        `/爱农 开一局` 被判定成「爱完美的子命令落空」，`stop_event()` 把整条
+        掐死——不只爱农，连「在吗」这种纯聊天也会被掐，老狗直接不理人。
+        所以非本组消息必须返回**空串**，让调用方一眼看出不归自己管。
         """
-        assert 取落空参数("/爱农 开一局", "爱完美") == "/爱农 开一局"
+        assert 取落空参数("/爱农 开一局", "爱完美") == ""
+        assert not 是否落空("/爱农 开一局", "爱完美")
+        assert not 是否落空("爱瓦 绑定", "爱完美")
+
+    @pytest.mark.parametrize(
+        "消息",
+        ["在吗", "", "今天天气不错", "爱农 状态", "爱瓦 绑定", "/help"],
+    )
+    def test_陌生消息一律放行(self, 消息):
+        """这六条都实测掐过（`老狗不理人`）。"""
+        assert not 是否落空(消息, "爱完美"), f"{消息!r} 被误判成爱完美的落空"
+
+    @pytest.mark.parametrize(
+        "消息",
+        ["/爱完美 绑定", "爱完美 绑定", "/爱完美 战绩", "爱完美 PK 老王", "/爱完美 help"],
+    )
+    def test_本组正常指令放行(self, 消息):
+        assert not 是否落空(消息, "爱完美"), f"{消息!r} 是正常指令，不该判成落空"
+
+    def test_以组名开头(self):
+        assert 以组名开头("爱完美 绑定", "爱完美")
+        assert 以组名开头("/爱完美 绑定", "爱完美")
+        assert not 以组名开头("爱农 开一局", "爱完美")
+        assert not 以组名开头("在吗", "爱完美")
+        assert not 以组名开头("", "爱完美")

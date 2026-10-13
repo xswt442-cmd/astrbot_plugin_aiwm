@@ -253,3 +253,42 @@ class Test接线:
         源码 = ast.unparse(_方法("PK"))
         assert '对比文本(要点, "甲", "乙")' not in 源码
         assert "对比文本(要点, 自己名, 对手名)" in 源码
+
+
+class Test兜底过滤器挂法:
+    """兜底 filter 的两个致命错误都在这里，各对应过一次线上事故。
+
+    1. 返回值语义写反 → `CommandGroupFilter.filter` 里
+       `if not custom_filter_ok(...): return False` 会把整个指令组毙掉，
+       正常指令全部没反应。
+    2. 不判断消息归不归自己管 → 那个 filter 对**每一条消息**都执行
+       （组名检查在它之后），于是「在吗」「/爱农 开一局」全被
+       `stop_event()` 掐掉，老狗对所有消息不理人。
+    """
+
+    def _兜底filter(self) -> ast.FunctionDef:
+        for 节点 in _树().body:
+            if isinstance(节点, ast.ClassDef) and 节点.name == "_落空兜底":
+                for 体 in 节点.body:
+                    if isinstance(体, ast.FunctionDef) and 体.name == "filter":
+                        return 体
+        raise AssertionError("main.py 里没有 _落空兜底.filter")
+
+    def test_所有出口都return_True(self):
+        方法 = self._兜底filter()
+        返回 = [
+            节点.value.value
+            for 节点 in ast.walk(方法)
+            if isinstance(节点, ast.Return) and isinstance(节点.value, ast.Constant)
+        ]
+        assert 返回 and set(返回) == {True}, (
+            f"兜底 filter 里出现了 {返回}，必须所有出口都 return True"
+        )
+
+    def test_先判是否归自己管(self):
+        方法 = self._兜底filter()
+        assert "以组名开头" in ast.unparse(方法), "缺了归属判断，会掐掉别人的消息"
+
+    def test_命中分支要掐掉事件(self):
+        """命中落空必须 stop_event，否则消息会漏给模型让它开始编。"""
+        assert "event.stop_event()" in ast.unparse(self._兜底filter())
