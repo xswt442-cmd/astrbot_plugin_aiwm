@@ -46,49 +46,21 @@ _组别名 = {f"/{_组名}"}
 _昵称上限 = 16
 
 _帮助文本 = """爱完美 · CS2 战绩查询
-
 数据来自 CS2 官方匹配（官匹），不是完美竞技平台的对局记录。
 
-/爱完美 绑定 <steamid64>
-  记下你的 SteamID64，之后的查询都看它。
+/爱完美 绑定 <steamid64 或含它的内容> ｜ 记下要查的号
+/爱完美 战绩 ｜ 近期战绩
+/爱完美 锐评 ｜ 让模型基于战绩写一段锐评
+/爱完美 开一局 ｜ 推演一局（不是真实战绩）
+/爱完美 PK <steamid64 或名字> ｜ 和另一个人比
+/爱完美 昵称 <名字> ｜ 改 PK 时被叫的名字
+/爱完美 状态 ｜ 看绑定情况
+/爱完美 解绑 ｜ 删除本地记录
+/爱完美 帮助 ｜ 就是这条
 
-  不用自己从一串东西里挑数字——下面这些粘给我都行，我从里面取：
-  · Steam 个人资料页的网址（…/profiles/76561198159976336）
-  · 启动器参数（steam.exe -login 76561198159976336）
-  · 那串数字本身
-  查战绩不需要登录平台，不用扫码。
-
-/爱完美 战绩
-  近期战绩：分数段与综合分、胜率、KD、Rating、ADR、KAST、RWS、
-  爆头率与首杀率、常用地图、常用武器与击杀分布、多杀次数、最近十场评分。
-
-/爱完美 开一局
-  随机生成一局，让模型推演过程与结果。数字是编的，会写明这一点。
-  绑定过的话推演贴近你的实际水平，没绑定按中等水平来。
-
-/爱完美 锐评
-  让模型基于上面的数据写一段锐评。会先给一句称号，再分别说打得好、
-  问题和一条具体建议。
-
-/爱完美 PK <steamid64 或名字>
-  和另一个人比近期战绩。对方不用绑定：
-  · 直接发他的 steamid64 或含它的网址，我从里面取
-  · 发他在本机记下的 PK 名字（用 /爱完美 昵称 设的）
-
-  模型会给两人各打一个趣味分并点评胜负手。
-
-/爱完美 昵称 <名字>
-  改你在 PK 时被叫的名字。不设的话取绑定时的显示名。
-
-/爱完美 解绑
-  解除绑定并立即删除本地记录。
-
-/爱完美 状态
-  看自己的标识、绑定情况。排查用。
-
-/爱完美 帮助
-  就是这条。
-
+绑定接受 Steam 资料页网址、启动器参数、纯数字，插件自己从里面取
+steamid64。查战绩不用登录、不用扫码。
+PK 对方不用绑定，直接发他的 steamid64 就行。
 直接问模型「我的 CS2 战绩怎么样」也会走同一套数据。"""
 
 
@@ -169,7 +141,7 @@ class Main(Star):
         已有 = self._凭据.读取(用户)
         if 已有:
             yield event.plain_result(
-                f"你已经绑定了 steamid {已有['steamid']}。要换号先用 /爱完美 解绑。"
+                f"已经绑定了 steamid {已有['steamid']}。要换号先发 /爱完美 解绑。"
             )
             return
 
@@ -185,18 +157,18 @@ class Main(Star):
             try:
                 文本, 统计 = await 读战绩数据(传输, 有效)
             except 业务错误 as exc:
-                yield event.plain_result(f"完美接口拒绝了这次查询：{exc}")
+                yield event.plain_result(f"接口拒绝了这次查询：{exc}")
                 return
             except Exception as exc:
                 logger.warning(f"[aiwm] 绑定前查询失败：{type(exc).__name__}: {exc}")
-                yield event.plain_result(f"查询完美接口失败：{exc}")
+                yield event.plain_result(f"接口查询失败：{exc}")
                 return
 
         if not 统计.get("总场次"):
             self._凭据.写入(用户, 有效, 昵称=self._昵称(event))
             yield event.plain_result(
-                f"已绑定 steamid {有效}，但完美平台没有返回战绩数据。"
-                "可能对方关闭了战绩展示，或还没打过天梯。"
+                f"已绑定 steamid {有效}，但接口没返回战绩数据："
+                "对方可能关了战绩展示，或还没打过天梯。"
             )
             return
 
@@ -205,8 +177,7 @@ class Main(Star):
         self._凭据.写入(用户, 有效, 昵称=self._昵称(event))
         logger.info(f"[aiwm] 用户绑定 steamid {有效}")
         yield event.plain_result(
-            f"绑定成功，steamid {有效}。\n\n战绩：\n{文本}\n\n"
-            "发 /爱完美 昵称 <名字> 可以改你在 PK 时被叫的名字。"
+            f"绑定成功，steamid {有效}。发 /爱完美 昵称 <名字> 可以改 PK 名字。\n\n战绩：\n{文本}"
         )
 
     def _昵称(self, event: AstrMessageEvent) -> str:
@@ -222,7 +193,7 @@ class Main(Star):
         用户 = event.get_sender_id()
         记录 = self._凭据.删除(用户)
         if not 记录:
-            yield event.plain_result("你还没有绑定 steamid。")
+            yield event.plain_result("还没绑定 steamid。")
             return
         yield event.plain_result(f"已解绑，本地记录已删除（steamid {记录['steamid']}）。")
 
@@ -232,15 +203,14 @@ class Main(Star):
         用户 = event.get_sender_id()
         记录 = self._凭据.读取(用户)
         if not 记录:
-            yield event.plain_result("还没绑定 steamid，先发 /爱完美 绑定。")
+            yield event.plain_result("还没绑定 steamid，先发 /爱完美 绑定 <steamid64>。")
             return
 
         新名 = str(名字).strip()
         if not 新名:
             当前 = str(记录.get("昵称") or "").strip()
             yield event.plain_result(
-                f"当前 PK 名字：{当前 or '（还没设）'}"
-                + (f"，绑定时自动取的是「{当前}」" if 当前 else "")
+                f"当前 PK 名字：「{当前 or '（还没设）'}」。发 /爱完美 昵称 <名字> 改。"
             )
             return
 
@@ -250,7 +220,7 @@ class Main(Star):
             return
 
         self._凭据.写入(用户, 记录["steamid"], 昵称=新名)
-        yield event.plain_result(f"PK 名字改成「{新名}」。群里发 /爱完美 PK {新名} 就能点到你。")
+        yield event.plain_result(f"PK 名字改成「{新名}」，群友发 /爱完美 PK {新名} 就能点你。")
 
     @爱完美.command("状态", alias={"status"})
     async def 状态(self, event: AstrMessageEvent):
@@ -263,10 +233,10 @@ class Main(Star):
             昵称 = str(记录.get("昵称") or "").strip()
             行.append(
                 f"已绑定 steamid {记录['steamid']}"
-                + (f"，PK 名字 {昵称}" if 昵称 else "，还没设 PK 名字")
+                + (f"，PK 名字「{昵称}」" if 昵称 else "，还没设 PK 名字")
             )
         else:
-            行.append("未绑定 steamid，发 /爱完美 绑定 <steamid64> 开始。")
+            行.append("还没绑定 steamid，先发 /爱完美 绑定 <steamid64>。")
 
         yield event.plain_result("\n".join(行))
 
@@ -357,7 +327,9 @@ class Main(Star):
             return
 
         # 设定先给用户看，模型写崩了至少还有这一局的数字。
-        yield event.plain_result(f"{设定文本(设定)}\n\n{结果.completion_text or ''}")
+        yield event.plain_result(
+            f"{设定文本(设定)}\n\n{结果.completion_text or '模型没有返回内容。'}"
+        )
 
     @爱完美.command("PK", alias={"pk", "对战"})
     async def PK(self, event: AstrMessageEvent, 目标: GreedyStr):
@@ -369,7 +341,7 @@ class Main(Star):
         自己 = event.get_sender_id()
         自己记录 = self._凭据.读取(自己)
         if not 自己记录:
-            yield event.plain_result("还没绑定 steamid，先发 /爱完美 绑定。")
+            yield event.plain_result("还没绑定 steamid，先发 /爱完美 绑定 <steamid64>。")
             return
 
         参数 = str(目标).strip()
@@ -382,21 +354,19 @@ class Main(Star):
         if 来源 == 对手来源.没找到:
             命中数 = self._按昵称找(参数)[0]
             if 命中数 > 1:
-                可选 = "、".join(
-                    str(记录.get("昵称") or 记录["steamid"]) for 记录 in self._同名候选(参数)[:5]
+                候选 = "\n".join(
+                    f"· {记录.get('昵称') or 记录['steamid']}" for 记录 in self._同名候选(参数)[:5]
                 )
                 yield event.plain_result(
-                    f"有 {命中数} 个人叫「{参数}」，分不清是哪个。\n"
-                    f"候选：{可选}\n"
-                    "直接发对方的 steamid64 最省事，或者让他用 /爱完美 昵称 "
-                    "换个更特别的名字。"
+                    f"有 {命中数} 个人叫「{参数}」，分不清是哪个：\n{候选}\n"
+                    "让对方发 /爱完美 昵称 换个更特别的名字，"
+                    "或者直接发他的 steamid64。"
                 )
                 return
             yield event.plain_result(
-                "没找到要 PK 的人。可以直接发他的 steamid64，我里面有就查：\n"
-                "例：/爱完美 PK 76561198159976336\n"
-                "也接受 Steam 个人资料页的网址。\n"
-                "发本机记下的 PK 名字也行，但对方得先绑定过。"
+                "没找到要 PK 的人。直接发他的 steamid64 就行，对方不用绑定：\n"
+                "例：/爱完美 PK 76561198159976336（Steam 资料页网址也行）\n"
+                "发 /爱完美 昵称 设过的名字也可以，但对方得先绑定过。"
             )
             return
 
@@ -426,9 +396,7 @@ class Main(Star):
                 return
 
         if not 自己统计.get("总场次") or not 对手统计.get("总场次"):
-            yield event.plain_result(
-                "有一方没有战绩数据。对方可能在完美平台关了战绩展示，或还没打过天梯。"
-            )
+            yield event.plain_result("有一方没有战绩数据：对方可能关了战绩展示，或还没打过天梯。")
             return
 
         自己名 = self._显示名(str(自己记录.get("昵称") or ""), "你")
@@ -518,7 +486,7 @@ class Main(Star):
         """
         记录 = self._凭据.读取(用户)
         if not 记录:
-            return "提问者还没有绑定 steamid，无法查询战绩。", None
+            return "还没绑定 steamid，先发 /爱完美 绑定 <steamid64>。", None
 
         async with 完美传输() as 传输:
             try:

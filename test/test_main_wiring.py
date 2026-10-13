@@ -159,7 +159,7 @@ class Test接线:
         读战绩 = _方法源码("_读战绩")
         # 返回值是二元组，第二个是统计字典，没有数据时为 None
         assert "tuple[str, dict[str, Any] | None]" in 读战绩
-        assert "'提问者还没有绑定 steamid，无法查询战绩。', None" in 读战绩
+        assert "'还没绑定 steamid，先发 /爱完美 绑定 <steamid64>。', None" in 读战绩
         # 数据为空时（玩家关了战绩展示）也要返回 None
         assert "return (文本, None)" in 读战绩
 
