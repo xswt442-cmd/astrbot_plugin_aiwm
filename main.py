@@ -15,10 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from astrbot.api import AstrBotConfig, logger
-from astrbot.api.event import AstrMessageEvent
+from astrbot.api.event import AstrMessageEvent, MessageEventResult
 from astrbot.api.event.filter import command_group, custom_filter, llm_tool
 from astrbot.api.star import Context, Star
-from astrbot.core.platform.astr_message_event import MessageEventResult
 from astrbot.core.star.filter.command import GreedyStr
 from astrbot.core.star.filter.custom_filter import CustomFilter
 
@@ -30,7 +29,7 @@ from .aiwm.pk import 找对手
 from .aiwm.pk_target import 取对手标识, 对手来源
 from .aiwm.prompts import PK提示, 开局提示, 锐评提示
 from .aiwm.stats import 占优项数, 对比文本, 对比要点
-from .aiwm.storage import 凭据仓库, 取有效steamid
+from .aiwm.storage import 净化昵称, 凭据仓库, 取有效steamid
 from .aiwm.transport import 业务错误, 完美传输
 from .aiwm.兜底 import 以组名开头, 取落空参数, 是否落空, 落空提示
 
@@ -77,6 +76,27 @@ def _迁移旧凭据(新目录: Path) -> None:
 
 # PK 名字要念在提示里，太长挤版面。
 _昵称上限 = 16
+
+
+def _配置整数(config: Any, 键: str, 默认: int) -> int:
+    """从配置里取正整数。缺项、写错、非正数都退回默认值。"""
+    if config is None:
+        return 默认
+    try:
+        值 = int(config.get(键, 默认))
+    except (TypeError, ValueError):
+        return 默认
+    return 值 if 值 > 0 else 默认
+
+
+def _配置开关(config: Any, 键: str, 默认: bool) -> bool:
+    if config is None:
+        return 默认
+    try:
+        return bool(config.get(键, 默认))
+    except Exception:  # noqa: BLE001 - 配置读不到就当默认
+        return 默认
+
 
 _帮助文本 = """爱完美 · CS2 战绩
 数据来自 CS2 官方匹配（官匹），不是完美竞技平台。
@@ -151,6 +171,9 @@ class Main(Star):
         """
         super().__init__(context)
         self.config = config
+        self._请求超时 = _配置整数(config, "request_timeout_seconds", 30)
+        self._最大步数 = _配置整数(config, "llm_max_steps", 8)
+        self._允许PK = _配置开关(config, "pk_enabled", True)
         self._凭据 = 凭据仓库(self._数据目录())
 
     def _数据目录(self) -> Path:
@@ -192,7 +215,7 @@ class Main(Star):
 
         # 先探一次接口再落库。用户打错一位数字的话，这里就会失败，
         # 而不是存进去之后每次查询都报错。
-        async with 完美传输() as 传输:
+        async with 完美传输(self._请求超时) as 传输:
             try:
                 文本, 统计 = await 读战绩数据(传输, 有效)
             except 业务错误 as exc:
@@ -217,7 +240,7 @@ class Main(Star):
     def _昵称(self, event: AstrMessageEvent) -> str:
         """发起绑定那个人的平台显示名。取不到就空着，不猜。"""
         try:
-            return str(event.get_sender_name() or "")
+            return 净化昵称(event.get_sender_name() or "")
         except Exception:
             return ""
 
@@ -240,9 +263,10 @@ class Main(Star):
             yield event.plain_result("还没绑定，先发 /爱完美 绑定 <steamid64>。")
             return
 
-        新名 = str(名字).strip()
+        # 先洗掉换行与零宽字符：昵称会被拼进 PK 提示词，带换行等于多一行指令。
+        新名 = 净化昵称(名字)
         if not 新名:
-            当前 = str(记录.get("昵称") or "").strip()
+            当前 = 净化昵称(记录.get("昵称") or "")
             yield event.plain_result(f"当前 PK 名字：「{当前 or '（还没设）'}」。")
             return
 
@@ -308,7 +332,7 @@ class Main(Star):
                 event=event,
                 chat_provider_id=提供方,
                 prompt=锐评提示(数据),
-                max_steps=8,
+                max_steps=self._最大步数,
             )
         except Exception as exc:
             logger.warning(f"[aiwm] 锐评调用模型失败：{type(exc).__name__}: {exc}")
@@ -332,7 +356,7 @@ class Main(Star):
             # 开一局不需要拿到完整战绩，接口失败就退回「无历史数据」那一档，
             # 不要因为查不到战绩就让这条指令整个用不了。
             try:
-                async with 完美传输() as 传输:
+                async with 完美传输(self._请求超时) as 传输:
                     _, 统计 = await 读战绩数据(传输, 记录["steamid"])
             except Exception as exc:
                 logger.info(f"[aiwm] 开一局读战绩失败，按无历史数据推演：{exc}")
@@ -351,7 +375,7 @@ class Main(Star):
                 event=event,
                 chat_provider_id=提供方,
                 prompt=开局提示(设定文本(设定)),
-                max_steps=8,
+                max_steps=self._最大步数,
             )
         except Exception as exc:
             logger.warning(f"[aiwm] 开一局调用模型失败：{type(exc).__name__}: {exc}")
@@ -370,6 +394,9 @@ class Main(Star):
         对手从三处找，参数优先：参数里含 steamid 就直接用它（对方不用绑定），
         否则试 @ 组件，最后按本机记下的 PK 名字找。
         """
+        if not self._允许PK:
+            yield event.plain_result("PK 已关闭。")
+            return
         自己 = event.get_sender_id()
         自己记录 = self._凭据.读取(自己)
         if not 自己记录:
@@ -406,7 +433,7 @@ class Main(Star):
             yield event.plain_result("不能跟自己 PK。")
             return
 
-        async with 完美传输() as 传输:
+        async with 完美传输(self._请求超时) as 传输:
             try:
                 自己数据, 自己统计 = await 读战绩数据(传输, 自己记录["steamid"])
             except Exception as exc:
@@ -458,7 +485,7 @@ class Main(Star):
                     自己数据,
                     对手数据,
                 ),
-                max_steps=8,
+                max_steps=self._最大步数,
             )
         except Exception as exc:
             logger.warning(f"[aiwm] PK 调用模型失败：{type(exc).__name__}: {exc}")
@@ -514,7 +541,7 @@ class Main(Star):
         if not 记录:
             return "还没绑定，先发 /爱完美 绑定 <steamid64>。", None
 
-        async with 完美传输() as 传输:
+        async with 完美传输(self._请求超时) as 传输:
             try:
                 文本, 统计 = await 读战绩数据(传输, 记录["steamid"])
             except Exception as exc:
@@ -527,7 +554,8 @@ class Main(Star):
 
     @staticmethod
     def _显示名(候选: str, 兜底: str) -> str:
-        return 候选.strip() or 兜底
+        # 老记录可能是净化之前存的，念之前再洗一次。
+        return 净化昵称(候选) or 兜底
 
     @staticmethod
     def _机器人标识(event: AstrMessageEvent) -> str:

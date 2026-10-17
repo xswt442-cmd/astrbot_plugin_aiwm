@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from aiwm.storage import 凭据仓库, 取有效steamid, 怎么找steamid, 提取steamid, 校验steamid
+from aiwm.storage import (
+    净化昵称,
+    凭据仓库,
+    取有效steamid,
+    怎么找steamid,
+    提取steamid,
+    校验steamid,
+)
 
 
 class Test提取steamid:
@@ -191,3 +198,20 @@ class Test凭据仓库:
 
         assert 仓库.读取("甲") is None
         assert 仓库.全部() == []
+
+
+class Test净化昵称:
+    """昵称会拼进 PK 提示词：换行能伪造指令，零宽字符能让两个名字看着一样。"""
+
+    def test_换行与制表符被去掉(self):
+        assert 净化昵称("老\n王\t") == "老王"
+
+    def test_零宽字符被去掉(self):
+        assert 净化昵称("老\u200b王") == "老王"
+
+    def test_首尾空白被压掉(self):
+        assert 净化昵称("  老王  ") == "老王"
+
+    def test_空值不抛(self):
+        assert 净化昵称("") == ""
+        assert 净化昵称(None) == ""

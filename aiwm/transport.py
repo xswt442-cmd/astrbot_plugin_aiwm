@@ -45,8 +45,9 @@ _取数据失败 = "完美接口的响应里没有 data 字段"
 class 完美传输:
     """完美平台战绩接口的 HTTP 客户端。"""
 
-    def __init__(self) -> None:
-        self._http = aiohttp.ClientSession()
+    def __init__(self, 超时: float = 30.0) -> None:
+        # 不设 total 的话，接口挂起会把整条指令一直吊着，用户只看到「没反应」。
+        self._http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=超时))
 
     async def 关闭(self) -> None:
         await self._http.close()
