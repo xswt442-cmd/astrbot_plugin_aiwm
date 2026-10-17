@@ -354,13 +354,10 @@ class Main(Star):
                 候选 = "\n".join(
                     f"· {记录.get('昵称') or 记录['steamid']}" for 记录 in self._同名候选(参数)[:5]
                 )
-                yield event.plain_result(
-                    f"有 {命中数} 个人叫「{参数}」，写完整一点：\n{候选}"
-                )
+                yield event.plain_result(f"有 {命中数} 个人叫「{参数}」，写完整一点：\n{候选}")
                 return
             yield event.plain_result(
-                "没找到要 PK 的人，发他的 steamid64 就行，"
-                "例如 /爱完美 PK 76561198159976336。"
+                "没找到要 PK 的人，发他的 steamid64 就行，例如 /爱完美 PK 76561198159976336。"
             )
             return
 
