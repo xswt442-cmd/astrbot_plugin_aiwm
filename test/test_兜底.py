@@ -73,11 +73,11 @@ class Test落空提示:
 
         assert "76561198829920790" in 提示
 
-    def test_没参数时列出指令(self):
+    def test_没参数时指向帮助(self):
+        """只留一句出口，不再复述一份迷你菜单。"""
         提示 = 落空提示("")
 
-        assert "战绩" in 提示
-        assert "帮助" in 提示
+        assert "/爱完美 帮助" in 提示
 
     def test_不给链接(self):
         """别再教用户发链接了，那条路走不通——Steam 社区站要登录态，

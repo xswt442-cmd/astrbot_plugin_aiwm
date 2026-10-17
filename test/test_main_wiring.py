@@ -159,7 +159,7 @@ class Test接线:
         读战绩 = _方法源码("_读战绩")
         # 返回值是二元组，第二个是统计字典，没有数据时为 None
         assert "tuple[str, dict[str, Any] | None]" in 读战绩
-        assert "'还没绑定 steamid，先发 /爱完美 绑定 <steamid64>。', None" in 读战绩
+        assert "'还没绑定，先发 /爱完美 绑定 <steamid64>。', None" in 读战绩
         # 数据为空时（玩家关了战绩展示）也要返回 None
         assert "return (文本, None)" in 读战绩
 
@@ -431,7 +431,7 @@ class Test帮助文案:
         assert "不是完美竞技平台" in 帮助块
 
     def test_说明自然语言也能用(self):
-        assert "直接问模型" in _帮助块()
+        assert "自然语言" in _帮助块()
 
     def test_开一局说明是推演(self):
         """用户看到一串 K/D/A 分不出真假，帮助里要先说清楚。"""

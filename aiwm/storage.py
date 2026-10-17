@@ -29,10 +29,7 @@ _steamid格式 = re.compile(r"^7\d{16}$")
 # 前边界排除数字与小数点，后边界同理。
 _文本里的steamid = re.compile(r"(?<![\d.])7\d{16}(?![\d.])")
 
-_怎么找 = (
-    "在 Steam 客户端点开你的个人资料，浏览器地址栏最后那串数字就是。\n"
-    "或者直接把你 Steam 个人资料页的网址发我，我从里面取。"
-)
+_怎么找 = "Steam 个人资料页网址里那串数字就是，直接粘过来也行。"
 
 
 def 校验steamid(候选: str) -> bool:
@@ -82,9 +79,7 @@ def 取有效steamid(候选: str) -> str:
         return 找到[0]
     if len(找到) > 1:
         可选 = "、".join(找到[:5])
-        raise ValueError(
-            f"你给的内容里有好几个 steamid：{可选}\n只发一个就行，比如只发 Steam 个人资料页的网址。"
-        )
+        raise ValueError(f"有好几个 steamid：{可选}，只发一个。")
 
     显示 = 文本 if len(文本) <= 40 else f"{文本[:40]}…"
     raise ValueError(
