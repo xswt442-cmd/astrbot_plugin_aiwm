@@ -5,6 +5,22 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.11] - 2026-10-17
+
+### 修正
+
+- **接口请求加超时。** `完美传输` 原来建的 `ClientSession` 没设 `total`，
+  接口挂起时整条指令会被一直吊着，用户只看到「没反应」。现在默认 30 秒，
+  可在配置里改。
+- **昵称过滤控制字符。** 换行能伪造提示词行、零宽字符能让两个名字看起来一样。
+  写入与拼提示词前各过滤一次。
+- `MessageEventResult` 改从 `astrbot.api.event` 取，不再走私有模块路径。
+
+### 新增
+
+- **配置项**（AstrBot 插件配置页可见）：接口超时、允许 PK、模型最大步数。
+  后两项分别接在 PK 指令开头与 `tool_loop_agent(max_steps=)` 上。
+
 ## [0.1.10] - 2026-10-17
 
 ### 修正
