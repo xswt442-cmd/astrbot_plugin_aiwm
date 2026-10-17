@@ -198,10 +198,17 @@ class Test接线:
         assert "取有效steamid" in 源码
 
     def test_凭据目录按插件名分开(self):
-        """数据落在 `plugin_data/aiwm/`，不与别的插件目录混在一起。"""
+        """数据落在 `plugin_data/astrbot_plugin_aiwm/`，不与别的插件目录混在一起。
+
+        市场审核规则是 `data/plugin_data/<plugin_name>`，`<plugin_name>` 指
+        插件目录名。自造简称（`aiwm`）会被驳回，所以这里钉死插件名。
+        """
         源码 = ast.unparse(_类树())
-        assert "'plugin_data' / 'aiwm'" in 源码
-        assert "ainong" not in 源码
+        assert "StarTools.get_data_dir(_插件名)" in 源码
+
+        主源码 = main源.read_text(encoding="utf-8")
+        assert '_插件名 = "astrbot_plugin_aiwm"' in 主源码
+        assert "'plugin_data' / 'aiwm'" not in 主源码
 
     def test_兜底的别名清单与指令一致(self):
         """`aiwm.兜底.子命令名` 是手抄的，main.py 改了别名忘了改它，

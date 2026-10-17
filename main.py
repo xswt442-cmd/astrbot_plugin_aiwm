@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import random
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,38 @@ _组名 = "爱完美"
 # startswith 分支才剥。于是 message_str 仍是 `/爱完美 战绩`，组名 `爱完美`
 # 匹配不上，整条指令静默失败。加一个带斜杠的别名，两种写法都能进。
 _组别名 = {f"/{_组名}"}
+
+# 数据目录必须用插件名。市场审核要求 `data/plugin_data/<plugin_name>`，
+# 而 `<plugin_name>` 指插件目录名，不是自造的简称。
+_插件名 = "astrbot_plugin_aiwm"
+# 0.1.9 及以前用的是这个简称目录，升级时把凭据搬过来。
+_旧数据目录名 = "aiwm"
+
+
+def _迁移旧凭据(新目录: Path) -> None:
+    """把 `plugin_data/aiwm` 里的凭据搬到 `plugin_data/astrbot_plugin_aiwm`。
+
+    只搬不覆盖：新目录已有同名文件就保留新的。搬完把空掉的旧目录删掉。
+    """
+    旧目录 = 新目录.parent / _旧数据目录名
+    if not 旧目录.is_dir() or 旧目录.resolve() == 新目录.resolve():
+        return
+
+    for 文件 in sorted(旧目录.glob("*.json")):
+        目标 = 新目录 / 文件.name
+        if 目标.exists():
+            continue
+        try:
+            shutil.move(str(文件), str(目标))
+            目标.chmod(0o600)
+        except OSError as exc:
+            logger.warning(f"[aiwm] 迁移旧凭据失败 {文件.name}：{exc}")
+
+    try:
+        旧目录.rmdir()
+    except OSError:
+        pass
+
 
 # PK 名字要念在提示里，太长挤版面。
 _昵称上限 = 16
@@ -121,9 +154,11 @@ class Main(Star):
         self._凭据 = 凭据仓库(self._数据目录())
 
     def _数据目录(self) -> Path:
-        from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+        from astrbot.core.star.star_tools import StarTools
 
-        return Path(get_astrbot_data_path()) / "plugin_data" / "aiwm"
+        目录 = StarTools.get_data_dir(_插件名)
+        _迁移旧凭据(目录)
+        return 目录
 
     @爱完美.command("帮助", alias={"help", "菜单"})
     async def 帮助(self, event: AstrMessageEvent):
