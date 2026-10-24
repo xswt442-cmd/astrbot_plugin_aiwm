@@ -12,7 +12,7 @@
 - 网络请求只用 `aiohttp`。
 - 数据落在 `data/plugin_data/aiwm/`，不写插件目录。
 - 凭据不进日志、不进异常消息、不进提交。解绑时删除文件。
-- **改图标改 `icon/aiwm-icon.png` 源图，再运行 `python test/做图标.py`**，不手改 `logo.png`——手改的结果会在下次生成时被覆盖。脚本中的比例与亮度阈值各有注释说明取值原因。
+- **换图标直接替换根目录 `logo.png`**，文件名与位置由 AstrBot 硬编码。源图不在仓库里；需要重新生成时把源图放到 `icon/aiwm-icon.png` 再运行 `python test/做图标.py`（脚本缩到 92% 并抠掉背景，取值原因见脚本注释）。
 
 ## config 必须可省
 

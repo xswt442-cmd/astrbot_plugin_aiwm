@@ -41,7 +41,7 @@
 ## 5. 版本与发版
 
 - 版本号在 `metadata.yaml`（带 `v` 前缀）、`pyproject.toml`、`uv.lock` 三处一致。
-- 发布包由 `git archive` 生成，内容由 `.gitattributes` 的 `export-ignore` 决定；`logo.png` 不排除，市场用它作图标。图标由 `python test/做图标.py` 从源图生成，不手改 `logo.png`。
+- 发布包由 `git archive` 生成，内容由 `.gitattributes` 的 `export-ignore` 决定；`logo.png` 不排除，市场用它作图标。换图标直接替换该文件。
 - Tag 与 Release 发布后不修改。需要修正时发布新版本号。
 - 操作步骤见 `docs/RELEASING.md`。
 
