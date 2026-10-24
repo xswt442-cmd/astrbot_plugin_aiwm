@@ -116,9 +116,9 @@ v0.1.2 与 v0.1.3 就只推了标签，Releases 页面停在 v0.1.1。
 
 规格是 256×256、RGB 无 alpha。
 
-**改图标改 `icon/aiwm-icon.png`，然后跑 `python test/做图标.py` 重新生成。**
-脚本会缩到 92%（让皇冠尖角在圆形裁切下不被切掉）并抠掉源图的方形底。手改
-`logo.png` 的话，下次重新生成就被覆盖了。
+**换图标直接替换根目录的 `logo.png`。** 源图不再进仓库；要重新生成的话，把源图
+放回 `icon/aiwm-icon.png` 再跑 `python test/做图标.py`——脚本会缩到 92%（让皇冠
+尖角在圆形裁切下不被切掉）并抠掉源图的方形底。
 
 `test/做图标.py` 需要 Pillow，它不在 `requirements.txt` 里——那是给 AstrBot
 装的运行时清单，而做图标是手工操作。
