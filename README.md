@@ -44,8 +44,7 @@ AstrBot 插件。绑定一个 SteamID64 就能查战绩，由对话模型给出�
 - 每人一份记录，互不可见，解绑即删
 
 ADR（每回合平均伤害）、KAST（每回合有贡献的比例）、RWS（队伍胜率中由该选手
-贡献的比例）是 FPS 特有的深度指标，MOB 类游戏没有对应物。术语见
-[docs/GLOSSARY.md](docs/GLOSSARY.md)。
+贡献的比例）是 FPS 特有的深度指标，MOB 类游戏没有对应物。
 
 ## 安装
 
@@ -145,8 +144,7 @@ uv run python test/verify_wmpvp.py <steamid64> --检查     # 核对字段名与
 相关代码前先跑 `--检查`，它会报出是哪个字段变了。持续集成里每天也跑一次。
 
 协作约定见 [AGENTS.md](AGENTS.md)，更新日志见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，
-术语定义见 [docs/GLOSSARY.md](docs/GLOSSARY.md)，发版流程见
-[docs/RELEASING.md](docs/RELEASING.md)。
+发版流程见 [docs/RELEASING.md](docs/RELEASING.md)。
 
 ## License
 
