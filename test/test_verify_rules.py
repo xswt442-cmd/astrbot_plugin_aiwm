@@ -9,41 +9,41 @@
 
 from __future__ import annotations
 
-from test_stats import _完整响应
+from test_stats import _full_response
 from 核对规则 import build_data, check
 
 
-def 一份响应() -> dict:
+def make_response() -> dict:
     return build_data()
 
 
-class Test两处构造数据一致:
+class TestBothBuildersAgree:
     """`核对规则.构造数据` 与 `test_stats._完整响应` 描述的是同一套量纲。
 
     两处不一致的话，其中一边就没有真实响应兜底了——所以要钉住。
     """
 
-    def test_量纲字段一致(self):
-        要比 = ("cnt", "winRate", "kast", "kd", "headShotRatio", "entryKillRatio")
+    def test_dimension_fields_consistent(self):
+        to_compare = ("cnt", "winRate", "kast", "kd", "headShotRatio", "entryKillRatio")
 
-        for key in 要比:
-            assert build_data()[key] == _完整响应[key], f"{key} 在两处对不上"
+        for key in to_compare:
+            assert build_data()[key] == _full_response[key], f"{key} 在两处对不上"
 
-    def test_构造数据本身能通过核对(self):
+    def test_builder_data_passes_check(self):
         assert check(build_data()) == []
 
-    def test_两份都被核对规则认可(self):
+    def test_both_accepted_by_rules(self):
         """`_完整响应` 也要能过核对，否则它是构造错的。"""
-        assert check(dict(_完整响应)) == []
+        assert check(dict(_full_response)) == []
 
 
-class Test正常情况:
-    def test_构造数据本身对得上(self):
-        assert check(一份响应()) == []
+class TestNormalCase:
+    def test_builder_data_consistent(self):
+        assert check(make_response()) == []
 
-    def test_具体值不同不算问题(self):
+    def test_different_values_not_a_problem(self):
         """核对的是量纲不是数值。换个号查，值本来就不同。"""
-        response = 一份响应()
+        response = make_response()
         response.update(
             {
                 "cnt": 350,
@@ -57,18 +57,18 @@ class Test正常情况:
 
         assert check(response) == []
 
-    def test_日期比评分长不算问题(self):
+    def test_long_date_not_a_problem(self):
         """真实响应就是日期 100 条、评分 30 条，不是 bug。"""
-        response = 一份响应()
+        response = make_response()
         response["historyRatings"] = [1.0] * 30
         response["historyDates"] = ["2026-10-01 20:00:00"] * 100
 
         assert check(response) == []
 
 
-class Test字段消失:
-    def test_字段没了要报(self):
-        response = 一份响应()
+class TestFieldMissing:
+    def test_reports_missing_field(self):
+        response = make_response()
         del response["kast"]
 
         problems = check(response)
@@ -76,15 +76,15 @@ class Test字段消失:
         assert "kast" in problems[0]
         assert "没返回" in problems[0]
 
-    def test_必填字段空值也要报(self):
-        response = 一份响应()
+    def test_reports_empty_required_field(self):
+        response = make_response()
         response["hotWeapons"] = []
 
         problems = check(response)
-        assert any("hotWeapons" in 条 for 条 in problems)
+        assert any("hotWeapons" in line for line in problems)
 
-    def test_多个字段消失要全报(self):
-        response = 一份响应()
+    def test_reports_all_missing_fields(self):
+        response = make_response()
         del response["kast"]
         del response["kd"]
         response["nickName"] = ""
@@ -92,77 +92,77 @@ class Test字段消失:
         assert len(check(response)) == 3
 
 
-class Test量纲变了:
-    def test_kast从小数变百分数(self):
+class TestDimensionChanged:
+    def test_kast_ratio_to_percent(self):
         """这个是真的发生过：写代码时按字段名想当然，当成 0~1 的比率，
         结果输出 KAST 7400%。接口哪天反过来改，这里要能报出来。
         """
-        response = 一份响应()
+        response = make_response()
         response["kast"] = 0.74
 
         problems = check(response)
-        assert any("kast" in 条 and "量纲" in 条 for 条 in problems)
+        assert any("kast" in line and "量纲" in line for line in problems)
 
-    def test_比率从百分数变小数(self):
-        response = 一份响应()
+    def test_ratio_from_percent_to_decimal(self):
+        response = make_response()
         response["winRate"] = 48.0
 
         problems = check(response)
-        assert any("winRate" in 条 for 条 in problems)
+        assert any("winRate" in line for line in problems)
 
-    def test_量纲提示要指出去改哪(self):
+    def test_dimension_hint_names_field(self):
         """报出问题就完了，人还得知道去改哪里。"""
-        response = 一份响应()
+        response = make_response()
         response["kast"] = 0.74
 
         problems = "\n".join(check(response))
         assert "test_stats.py" in problems
 
-    def test_字段类型变了要报(self):
-        response = 一份响应()
+    def test_reports_type_change(self):
+        response = make_response()
         response["kd"] = "1.24"
 
         problems = check(response)
-        assert any("期望数字" in 条 for 条 in problems)
+        assert any("期望数字" in line for line in problems)
 
-    def test_差一个数量级之内不算变(self):
+    def test_same_order_not_a_change(self):
         """不同的人数据差得挺多，太严会一直报。"""
-        response = 一份响应()
+        response = make_response()
         response["kd"] = 1.24 * 5
 
         assert check(response) == []
 
 
-class Test场次字段语义:
-    def test_生涯胜场小于场次要报(self):
+class TestMatchFieldSemantics:
+    def test_reports_career_wins_below_matches(self):
         """两个字段互换了是个真会发生的坑。
 
         拿 historyWinCount 去减 cnt 算负场会得到 0，而 cnt 乘胜率反推是对的。
         """
-        response = 一份响应()
+        response = make_response()
         response["historyWinCount"] = 50
 
         problems = check(response)
-        assert any("historyWinCount" in 条 and "cnt" in 条 for 条 in problems)
+        assert any("historyWinCount" in line and "cnt" in line for line in problems)
 
-    def test_生涯胜场远大于场次是正常的(self):
+    def test_career_wins_above_matches_ok(self):
         """实测就是 679 对 100。"""
-        response = 一份响应()
+        response = make_response()
         response["historyWinCount"] = 679
 
         assert check(response) == []
 
 
-class Test坏响应:
-    def test_空响应要报一堆(self):
+class TestBadResponse:
+    def test_empty_response_reports_many(self):
         problems = check({})
 
         assert len(problems) >= 9
 
-    def test_字段名换了要报(self):
+    def test_reports_renamed_field(self):
         """`kd` 改成 `ratio` 之类的情况，所有字段都会报缺失。"""
-        response = 一份响应()
-        新 = {"ratio": response.pop("kd")}
+        response = make_response()
+        new = {"ratio": response.pop("kd")}
 
-        problems = check(新 | response)
-        assert any("kd" in 条 and "没返回" in 条 for 条 in problems)
+        problems = check(new | response)
+        assert any("kd" in line and "没返回" in line for line in problems)

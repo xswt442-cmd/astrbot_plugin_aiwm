@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["核对", "构造数据"]
+__all__ = ["check", "build_data"]
 
 # 只挑量纲明确的字段。`nickName`、`avatar`、`hours` 这类具体值本来就因人而异，
 # 拿来比会一直报差异，所以它们的缺失靠 `_必填字段` 单独盯。

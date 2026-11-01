@@ -19,5 +19,5 @@ async def fetch_battle_data(client, steam_id: str) -> tuple[str, dict[str, Any]]
     """取一个 steamid64 的战绩，返回 (给模型读的文本, 统计字典)。"""
     response = await client.fetch_stats(steam_id)
     stats = summarize(response)
-    text = summary_text(stats, 段位=tier_name(stats.get("段位分")))
+    text = summary_text(stats, tier=tier_name(stats.get("段位分")))
     return text, stats

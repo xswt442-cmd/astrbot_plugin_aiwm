@@ -18,7 +18,9 @@ MAIN_SOURCE = (REPO_ROOT / "main.py").read_text(encoding="utf-8")
 
 def _keys_read_by_code() -> set[str]:
     key = set(re.findall(r"config\.get\(\s*[\"']([^\"']+)[\"']", MAIN_SOURCE))
-    key |= set(re.findall(r"_config_(?:int|flag)\(\s*config\s*,\s*[\"']([^\"']+)[\"']", MAIN_SOURCE))
+    key |= set(
+        re.findall(r"_config_(?:int|flag)\(\s*config\s*,\s*[\"']([^\"']+)[\"']", MAIN_SOURCE)
+    )
     return key
 
 
@@ -42,5 +44,7 @@ def test_each_entry_has_type_desc_default():
 
 def test_types_supported():
     allowed = {"string", "int", "float", "bool", "text", "list", "dict", "file"}
-    bad = {key: entry.get("type") for key, entry in schema.items() if entry.get("type") not in allowed}
+    bad = {
+        key: entry.get("type") for key, entry in schema.items() if entry.get("type") not in allowed
+    }
     assert not bad, f"这些类型 AstrBot 不认：{bad}"

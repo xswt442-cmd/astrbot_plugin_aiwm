@@ -64,7 +64,8 @@ def test_direct_deps_match_pyproject():
     requirements_name = {_DEP_LINE.match(line).group() for line in _read_requirements()}
     declared_name = {_DEP_LINE.match(line).group() for line in _read_declared()}
     assert requirements_name == declared_name, (
-        f"两边不一致。requirements.txt: {sorted(requirements_name)}，pyproject.toml: {sorted(declared_name)}"
+        f"两边不一致。requirements.txt: {sorted(requirements_name)}，"
+        f"pyproject.toml: {sorted(declared_name)}"
     )
 
 
