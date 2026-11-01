@@ -9,7 +9,14 @@ from __future__ import annotations
 import random
 import statistics
 
-from aiwm.match import 侧写, 开局设定, 武器类别, 设定文本, 选地图, 选武器
+from aiwm.match import (
+    WEAPON_CATEGORIES,
+    build_match_setup,
+    pick_map,
+    pick_weapon,
+    setup_text,
+    skill_profile,
+)
 
 _有统计 = {
     "总场次": 100,
@@ -22,7 +29,7 @@ _有统计 = {
 
 def _跑局数(统计=None, 局数=300):
     随机源 = random.Random(20261012)
-    return [开局设定(随机源, 统计) for _ in range(局数)]
+    return [build_match_setup(随机源, 统计) for _ in range(局数)]
 
 
 class Test比分与赛制:
@@ -69,7 +76,7 @@ class Test个人表现:
     def test_命中率在该武器的合理区间(self):
         """AWP 的命中率天然高于步枪，用同一套区间会立刻露馅。"""
         for 设定 in _跑局数(局数=200):
-            下, 上 = 武器类别[设定["武器"]]
+            下, 上 = WEAPON_CATEGORIES[设定["武器"]]
             assert 下 * 100 <= 设定["命中率"] <= 上 * 100, (
                 f"{设定['武器']} 的命中率 {设定['命中率']} 越界（应在 {下 * 100}~{上 * 100}）"
             )
@@ -95,9 +102,9 @@ class Test水平适配:
     def test_水平按段位分给描述(self):
         随机源 = random.Random(1)
 
-        assert "白银" in 侧写(随机源, 3000)
-        assert "神话" in 侧写(随机源, 20620)
-        assert "超凡" in 侧写(随机源, 26000)
+        assert "白银" in skill_profile(随机源, 3000)
+        assert "神话" in skill_profile(随机源, 20620)
+        assert "超凡" in skill_profile(随机源, 26000)
 
     def test_段位更高时击杀更多(self):
         """同样 300 局，高手该打得比新手多。"""
@@ -115,7 +122,7 @@ class Test水平适配:
 class Test选图与选枪:
     def test_地图来自真实池子(self):
         随机源 = random.Random(7)
-        地图集 = {选地图(随机源) for _ in range(200)}
+        地图集 = {pick_map(随机源) for _ in range(200)}
 
         assert 地图集 <= {
             "远古遗迹",
@@ -131,11 +138,11 @@ class Test选图与选枪:
         """`_加权取` 与 `武器类别` 是两套表，漏配就会在生成时 KeyError。"""
         随机源 = random.Random(7)
         for _ in range(300):
-            assert 选武器(随机源) in 武器类别
+            assert pick_weapon(随机源) in WEAPON_CATEGORIES
 
     def test_步枪比手枪常见(self):
         随机源 = random.Random(7)
-        枪 = [选武器(随机源) for _ in range(600)]
+        枪 = [pick_weapon(随机源) for _ in range(600)]
         步枪 = sum(1 for 名 in 枪 if 名 in ("AK47", "M4A4", "M4A1消音型"))
 
         assert 步枪 > len(枪) * 0.5, f"步枪只占 {步枪 / len(枪):.0%}，不像真人"
@@ -145,21 +152,21 @@ class Test输出文本:
     def test_每项都出现在文本里(self):
         """结构化输出靠这段文字，漏一项模型就不知道该说什么。"""
         设定 = _跑局数(_有统计, 局数=1)[0]
-        文本 = 设定文本(设定)
+        文本 = setup_text(设定)
 
         for 键 in ("地图", "武器", "比分", "击杀", "命中率", "评级", "水平"):
             assert 键 in 文本, f"{键} 没出现在设定文本里"
 
     def test_比分写明胜负(self):
         设定 = _跑局数(_有统计, 局数=1)[0]
-        文本 = 设定文本(设定)
+        文本 = setup_text(设定)
 
         assert "胜" in 文本 or "负" in 文本
 
     def test_真实统计不出现在设定文本里(self):
         """设定文本只讲这一局，不该把玩家历史数据混进来——那会让模型混淆推演与事实。"""
         设定 = _跑局数(_有统计, 局数=1)[0]
-        文本 = 设定文本(设定)
+        文本 = setup_text(设定)
 
         assert "20620" not in 文本
         assert "100" not in 文本

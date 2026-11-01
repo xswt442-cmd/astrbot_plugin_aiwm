@@ -8,7 +8,14 @@ from __future__ import annotations
 
 import pytest
 
-from aiwm.prompts import PK提示, 开局提示, 推演声明, 称号前缀, 端水词, 锐评提示
+from aiwm.prompts import (
+    FLUFF_WORDS,
+    SIMULATION_NOTICE,
+    TITLE_PREFIX,
+    match_prompt,
+    pk_prompt,
+    review_prompt,
+)
 
 
 class Test不许编造:
@@ -23,9 +30,9 @@ class Test不许编造:
     @pytest.mark.parametrize(
         "提示",
         [
-            锐评提示("数据"),
-            开局提示("设定"),
-            PK提示("甲", "乙", "对比", "占优", "甲数据", "乙数据"),
+            review_prompt("数据"),
+            match_prompt("设定"),
+            pk_prompt("甲", "乙", "对比", "占优", "甲数据", "乙数据"),
         ],
     )
     def test_都写了不许编(self, 提示):
@@ -34,7 +41,7 @@ class Test不许编造:
 
     def test_锐评点名了没数据就不能说的话(self):
         """最容易被编的三类：无对局明细、经济数据、队友信息。"""
-        提示 = 锐评提示("数据")
+        提示 = review_prompt("数据")
 
         assert "对局明细" in 提示
         assert "经济" in 提示
@@ -42,11 +49,11 @@ class Test不许编造:
 
     def test_数据源写的是官匹(self):
         """不能说成「完美竞技平台」——那是替接口撒谎，用户一核对就对不上。"""
-        assert "官匹" in 锐评提示("数据")
-        assert "完美竞技平台" not in 锐评提示("数据")
+        assert "官匹" in review_prompt("数据")
+        assert "完美竞技平台" not in review_prompt("数据")
 
     def test_开一局不说完美竞技(self):
-        提示 = 开局提示("设定")
+        提示 = match_prompt("设定")
 
         assert "完美竞技平台" not in 提示
         assert "CS2 竞技" in 提示
@@ -55,48 +62,48 @@ class Test不许编造:
 class Test锐评提示:
     def test_写死称号前缀(self):
         """模型很爱自由发挥成「称号：xxx」，所以前后都要写一遍这个前缀。"""
-        提示 = 锐评提示("数据")
+        提示 = review_prompt("数据")
 
-        assert 称号前缀 in 提示
-        assert f"第一行必须以「{称号前缀}」开头" in 提示
+        assert TITLE_PREFIX in 提示
+        assert f"第一行必须以「{TITLE_PREFIX}」开头" in 提示
 
     def test_端水词列成禁令(self):
         """对模型说「不要端水」效果一般，列具体词表才有用。"""
-        提示 = 锐评提示("数据")
+        提示 = review_prompt("数据")
 
-        for 词 in 端水词:
+        for 词 in FLUFF_WORDS:
             assert 词 in 提示
 
     def test_数据原样带进提示(self):
-        assert "数据：\n统计场次 100（48胜52负）" in 锐评提示("统计场次 100（48胜52负）")
+        assert "数据：\n统计场次 100（48胜52负）" in review_prompt("统计场次 100（48胜52负）")
 
     def test_要求出现具体数字(self):
-        提示 = 锐评提示("数据")
+        提示 = review_prompt("数据")
 
         assert "至少出现 3 个具体数字" in 提示
 
     def test_点名CS2专属指标(self):
         """RWS 与 ADR 是 CS2 才有的指标，提示里要引导模型去看它们。"""
-        提示 = 锐评提示("数据")
+        提示 = review_prompt("数据")
 
         assert "ADR" in 提示
         assert "KAST" in 提示
         assert "首杀率" in 提示
 
     def test_要求指出具体短板(self):
-        提示 = 锐评提示("数据")
+        提示 = review_prompt("数据")
 
         assert "必须指向数据里的具体一项" in 提示
 
     def test_给了字数范围(self):
-        提示 = 锐评提示("数据")
+        提示 = review_prompt("数据")
 
         assert "180 到 260 字" in 提示
 
 
 class TestPK提示:
     def _提示(self) -> str:
-        return PK提示(
+        return pk_prompt(
             "老王",
             "小明",
             "KD：老王占优（老王 1.3 / 小明 0.9）",
@@ -146,7 +153,7 @@ class TestPK提示:
     def test_端水词列成禁令(self):
         提示 = self._提示()
 
-        for 词 in 端水词:
+        for 词 in FLUFF_WORDS:
             assert 词 in 提示
 
     def test_互损要有字数下限(self):
@@ -170,9 +177,9 @@ class Test开局提示:
         所以「推演」这个字样要在提示里出现好几次——开头说明设定是编的、
         骨架里第一行是免责声明、硬要求里再说一遍不许省略。
         """
-        提示 = 开局提示("设定")
+        提示 = match_prompt("设定")
 
-        assert 提示.count(推演声明) >= 2
+        assert 提示.count(SIMULATION_NOTICE) >= 2
         assert "不是真实战绩" in 提示
 
     def test_免责声明在骨架里(self):
@@ -180,11 +187,11 @@ class Test开局提示:
 
         按内容找而不是数索引——提示词的段落顺序以后可能调整，数索引会假红。
         """
-        提示 = 开局提示("设定")
+        提示 = match_prompt("设定")
         模板 = [行.strip() for 行 in 提示.split("硬要求：")[0].splitlines() if 行.strip()]
 
-        assert 推演声明 in 模板
-        声明位置 = 模板.index(推演声明)
+        assert SIMULATION_NOTICE in 模板
+        声明位置 = 模板.index(SIMULATION_NOTICE)
         assert 模板[声明位置 + 1 : 声明位置 + 5] == [
             "经过：<两三句：这一局是怎么打的，节奏怎么走>",
             "亮点：<点出这局设定里最漂亮的一处，带具体数字>",
@@ -193,31 +200,31 @@ class Test开局提示:
         ], "声明后面要紧跟四个小标题，那是输出模板"
 
     def test_硬要求里写了不许省略(self):
-        提示 = 开局提示("设定")
+        提示 = match_prompt("设定")
 
         assert "不许改写、不许省略" in 提示
-        assert f"第一行必须是「{推演声明}」" in 提示
+        assert f"第一行必须是「{SIMULATION_NOTICE}」" in 提示
 
     def test_小标题原样保留(self):
         """标题飘了输出就没法直接展示，要靠这几行钉住。"""
-        提示 = 开局提示("设定")
+        提示 = match_prompt("设定")
 
         for 标题 in ("经过：", "亮点：", "问题：", "复盘："):
             assert 标题 in 提示
 
     def test_亮点与问题都要有数字(self):
         """只要数字出现在全文就够了——分得太细模型会写得很别扭。"""
-        提示 = 开局提示("设定")
+        提示 = match_prompt("设定")
 
         assert "「亮点」和「问题」各必须出现设定里的至少一个数字" in 提示
 
     def test_设定原样带进提示(self):
-        提示 = 开局提示("地图：远古遗迹\n击杀：16")
+        提示 = match_prompt("地图：远古遗迹\n击杀：16")
 
         assert "这局的设定：\n地图：远古遗迹\n击杀：16" in 提示
 
     def test_不许把设定当真实战绩(self):
         """提示里要明确设定是随机生成的，别让模型当成用户的历史数据。"""
-        提示 = 开局提示("设定")
+        提示 = match_prompt("设定")
 
         assert "数字是随机生成的" in 提示

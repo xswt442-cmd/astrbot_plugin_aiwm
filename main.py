@@ -31,11 +31,11 @@ from .aiwm.fallback import (
     miss_hint,
     starts_with_group,
 )
-from .aiwm.match import 开局设定, 设定文本
+from .aiwm.match import build_match_setup, setup_text
 from .aiwm.pk import find_opponent
 from .aiwm.pk_target import OpponentSource, resolve_opponent
-from .aiwm.prompts import PK提示, 开局提示, 锐评提示
-from .aiwm.stats import 占优项数, 对比文本, 对比要点
+from .aiwm.prompts import match_prompt, pk_prompt, review_prompt
+from .aiwm.stats import advantage_count, contrast_points, contrast_text
 from .aiwm.storage import CredentialStore, clean_nickname, resolve_steamid
 from .aiwm.transport import ApiError, WmpvpClient
 
@@ -343,7 +343,7 @@ class Main(Star):
             结果 = await self.context.tool_loop_agent(
                 event=event,
                 chat_provider_id=提供方,
-                prompt=锐评提示(数据),
+                prompt=review_prompt(数据),
                 max_steps=self._最大步数,
             )
         except Exception as exc:
@@ -374,7 +374,7 @@ class Main(Star):
                 logger.info(f"[aiwm] 开一局读战绩失败，按无历史数据推演：{exc}")
                 统计 = None
 
-        设定 = 开局设定(random.Random(), 统计)
+        设定 = build_match_setup(random.Random(), 统计)
 
         try:
             提供方 = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
@@ -386,7 +386,7 @@ class Main(Star):
             结果 = await self.context.tool_loop_agent(
                 event=event,
                 chat_provider_id=提供方,
-                prompt=开局提示(设定文本(设定)),
+                prompt=match_prompt(setup_text(设定)),
                 max_steps=self._最大步数,
             )
         except Exception as exc:
@@ -396,7 +396,7 @@ class Main(Star):
 
         # 设定先给用户看，模型写崩了至少还有这一局的数字。
         yield event.plain_result(
-            f"{设定文本(设定)}\n\n{结果.completion_text or '模型没有返回内容。'}"
+            f"{setup_text(设定)}\n\n{结果.completion_text or '模型没有返回内容。'}"
         )
 
     @爱完美.command("PK", alias={"pk", "对战"})
@@ -474,7 +474,7 @@ class Main(Star):
         # 逐项对比里用真实姓名，不用「甲／乙」。同一份提示里一处写「甲占优」
         # 一处写「老王 3 项」，模型得自己推断甲是老王——这层映射没有必要，
         # 平白多一次出错的机会。
-        要点 = 对比要点(自己统计, 对手统计)
+        要点 = contrast_points(自己统计, 对手统计)
         if not 要点:
             yield event.plain_result("两边没有可比的项目。")
             return
@@ -489,11 +489,11 @@ class Main(Star):
             结果 = await self.context.tool_loop_agent(
                 event=event,
                 chat_provider_id=提供方,
-                prompt=PK提示(
+                prompt=pk_prompt(
                     自己名,
                     对手名,
-                    对比文本(要点, 自己名, 对手名),
-                    占优项数(要点, 自己名, 对手名),
+                    contrast_text(要点, 自己名, 对手名),
+                    advantage_count(要点, 自己名, 对手名),
                     自己数据,
                     对手数据,
                 ),

@@ -262,7 +262,7 @@ class Test接线:
         """模型写崩了，至少还有这一局的数字可看。"""
         源码 = _方法源码("开一局")
 
-        assert 源码.count("设定文本") >= 2, "设定文本应该在提示与输出里各用一次"
+        assert 源码.count("setup_text") >= 2, "设定文本应该在提示与输出里各用一次"
 
     def test_开一局读战绩失败不影响整条指令(self):
         """绑定着但接口挂了就退回「无历史数据」那一档，别让这条指令整个用不了。"""
@@ -277,8 +277,8 @@ class Test接线:
         混用的话模型得自己推断「甲」是老王，这层映射没有必要。
         """
         源码 = ast.unparse(_方法("PK"))
-        assert '对比文本(要点, "甲", "乙")' not in 源码
-        assert "对比文本(要点, 自己名, 对手名)" in 源码
+        assert 'contrast_text(points, "甲", "乙")' not in 源码
+        assert "contrast_text(要点, 自己名, 对手名)" in 源码
 
 
 class Test兜底过滤器挂法:
