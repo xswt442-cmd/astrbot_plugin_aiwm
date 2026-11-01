@@ -36,7 +36,7 @@ from .aiwm.pk import find_opponent
 from .aiwm.pk_target import OpponentSource, resolve_opponent
 from .aiwm.prompts import PK提示, 开局提示, 锐评提示
 from .aiwm.stats import 占优项数, 对比文本, 对比要点
-from .aiwm.storage import 净化昵称, 凭据仓库, 取有效steamid
+from .aiwm.storage import CredentialStore, clean_nickname, resolve_steamid
 from .aiwm.transport import ApiError, WmpvpClient
 
 # 指令组名。改这里要同时改 `_帮助文本` 的开头与 `aiwm/fallback.py` 的取参函数。
@@ -186,7 +186,7 @@ class Main(Star):
         self._请求超时 = _配置整数(config, "request_timeout_seconds", 30)
         self._最大步数 = _配置整数(config, "llm_max_steps", 8)
         self._允许PK = _配置开关(config, "pk_enabled", True)
-        self._凭据 = 凭据仓库(self._数据目录())
+        self._凭据 = CredentialStore(self._数据目录())
 
     def _数据目录(self) -> Path:
         from astrbot.core.star.star_tools import StarTools
@@ -220,7 +220,7 @@ class Main(Star):
             return
 
         try:
-            有效 = 取有效steamid(str(内容))
+            有效 = resolve_steamid(str(内容))
         except ValueError as exc:
             yield event.plain_result(str(exc))
             return
@@ -252,7 +252,7 @@ class Main(Star):
     def _昵称(self, event: AstrMessageEvent) -> str:
         """发起绑定那个人的平台显示名。取不到就空着，不猜。"""
         try:
-            return 净化昵称(event.get_sender_name() or "")
+            return clean_nickname(event.get_sender_name() or "")
         except Exception:
             return ""
 
@@ -276,9 +276,9 @@ class Main(Star):
             return
 
         # 先洗掉换行与零宽字符：昵称会被拼进 PK 提示词，带换行等于多一行指令。
-        新名 = 净化昵称(名字)
+        新名 = clean_nickname(名字)
         if not 新名:
-            当前 = 净化昵称(记录.get("昵称") or "")
+            当前 = clean_nickname(记录.get("昵称") or "")
             yield event.plain_result(f"当前 PK 名字：「{当前 or '（还没设）'}」。")
             return
 
@@ -567,7 +567,7 @@ class Main(Star):
     @staticmethod
     def _显示名(候选: str, 兜底: str) -> str:
         # 老记录可能是净化之前存的，念之前再洗一次。
-        return 净化昵称(候选) or 兜底
+        return clean_nickname(候选) or 兜底
 
     @staticmethod
     def _机器人标识(event: AstrMessageEvent) -> str:

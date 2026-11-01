@@ -195,7 +195,7 @@ class Test接线:
         """用户打错一位数字的话要在绑定时就发现，而不是存进去之后每次查询失败。"""
         源码 = _方法源码("绑定")
         assert "fetch_battle_data" in 源码
-        assert "取有效steamid" in 源码
+        assert "resolve_steamid" in 源码
 
     def test_凭据目录按插件名分开(self):
         """数据落在 `plugin_data/astrbot_plugin_aiwm/`，不与别的插件目录混在一起。
