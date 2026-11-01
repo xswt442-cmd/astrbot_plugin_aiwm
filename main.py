@@ -3,7 +3,7 @@
 用户绑定自己的 steamid64 后，指令与模型都能读到他自己的战绩数据。
 
 数据来自 `api.wmpvp.com`——域名是完美竞技平台的，但**返回的是 CS2 官方匹配
-（官匹）的数据**，不是完美平台的对局记录。三条实测证据见 `aiwm/来源.py`。
+（官匹）的数据**，不是完美平台的对局记录。三条实测证据见 `aiwm/source.py`。
 所以输出里不能说「完美平台战绩」。
 """
 
@@ -23,17 +23,23 @@ from astrbot.core.star.filter.custom_filter import CustomFilter
 
 # 全部在模块顶层导入。插件加载时就把整个包摸清：少文件、依赖缺失都在启动
 # 阶段报错，而不是等用户发了指令才在懒加载里抛模块不存在。
-from .aiwm.battles import 读战绩数据
+from .aiwm.battles import fetch_battle_data
+from .aiwm.fallback import (
+    is_bare_command,
+    is_command_miss,
+    leftover_arg,
+    miss_hint,
+    starts_with_group,
+)
 from .aiwm.match import 开局设定, 设定文本
-from .aiwm.pk import 找对手
-from .aiwm.pk_target import 取对手标识, 对手来源
+from .aiwm.pk import find_opponent
+from .aiwm.pk_target import OpponentSource, resolve_opponent
 from .aiwm.prompts import PK提示, 开局提示, 锐评提示
 from .aiwm.stats import 占优项数, 对比文本, 对比要点
 from .aiwm.storage import 净化昵称, 凭据仓库, 取有效steamid
-from .aiwm.transport import 业务错误, 完美传输
-from .aiwm.兜底 import 以组名开头, 取落空参数, 是否空指令, 是否落空, 落空提示
+from .aiwm.transport import ApiError, WmpvpClient
 
-# 指令组名。改这里要同时改 `_帮助文本` 的开头与 `aiwm/兜底.py` 的取参函数。
+# 指令组名。改这里要同时改 `_帮助文本` 的开头与 `aiwm/fallback.py` 的取参函数。
 _组名 = "爱完美"
 
 # 组名别名。QQ 官方适配器在「@机器人 + 指令」这条路径上走的是 At 唤醒分支，
@@ -135,7 +141,7 @@ class _落空兜底(CustomFilter):
     `filter` 的返回值语义是「这条消息我管不管」，**不是**「我有没有命中」——
     `CommandGroupFilter.filter` 里`if not self.custom_filter_ok(...): return False`，
     返回 False 会把整个指令组毙掉。所以所有出口都return True：不归我管就
-    立刻放行（这一步不能省，见 `aiwm.兜底.以组名开头`），命中就自己给结果。
+    立刻放行（这一步不能省，见 `aiwm.fallback.以组名开头`），命中就自己给结果。
     写反的后果：正常指令没反应，或者别人的消息被误掐——两个都实际发生过。
     """
 
@@ -143,16 +149,16 @@ class _落空兜底(CustomFilter):
         文本 = getattr(event, "message_str", "") or ""
         # 这条过滤器对**每一条消息**都会跑（CommandGroupFilter 先跑
         # custom_filter_ok 再检查组名），所以第一件事是判断关不关我事。
-        if not 以组名开头(文本, _组名):
+        if not starts_with_group(文本, _组名):
             return True
-        if 是否空指令(文本, _组名):
+        if is_bare_command(文本, _组名):
             # 只发了「/爱完美」：回帮助。交给框架会甩一串「参数不足」加各指令的
             # docstring，用户看到的是内部说明，不是能发什么。
             event.set_result(MessageEventResult().message(_帮助文本))
             event.stop_event()
             return True
-        if 是否落空(文本, _组名):
-            event.set_result(MessageEventResult().message(落空提示(取落空参数(文本, _组名))))
+        if is_command_miss(文本, _组名):
+            event.set_result(MessageEventResult().message(miss_hint(leftover_arg(文本, _组名))))
             event.stop_event()
         return True
 
@@ -221,10 +227,10 @@ class Main(Star):
 
         # 先探一次接口再落库。用户打错一位数字的话，这里就会失败，
         # 而不是存进去之后每次查询都报错。
-        async with 完美传输(self._请求超时) as 传输:
+        async with WmpvpClient(self._请求超时) as 传输:
             try:
-                文本, 统计 = await 读战绩数据(传输, 有效)
-            except 业务错误 as exc:
+                文本, 统计 = await fetch_battle_data(传输, 有效)
+            except ApiError as exc:
                 yield event.plain_result(f"接口拒绝了这次查询：{exc}")
                 return
             except Exception as exc:
@@ -362,8 +368,8 @@ class Main(Star):
             # 开一局不需要拿到完整战绩，接口失败就退回「无历史数据」那一档，
             # 不要因为查不到战绩就让这条指令整个用不了。
             try:
-                async with 完美传输(self._请求超时) as 传输:
-                    _, 统计 = await 读战绩数据(传输, 记录["steamid"])
+                async with WmpvpClient(self._请求超时) as 传输:
+                    _, 统计 = await fetch_battle_data(传输, 记录["steamid"])
             except Exception as exc:
                 logger.info(f"[aiwm] 开一局读战绩失败，按无历史数据推演：{exc}")
                 统计 = None
@@ -414,9 +420,9 @@ class Main(Star):
         # 文本要带上命令参数：官方适配器只把「@机器人」转成组件，@别人会原样
         # 留在正文里。
         at标识 = self._at标识(event, 参数)
-        对手steamid, 来源, 对手记录 = 取对手标识(参数, at标识, self._按昵称找)
+        对手steamid, 来源, 对手记录 = resolve_opponent(参数, at标识, self._按昵称找)
 
-        if 来源 == 对手来源.没找到:
+        if 来源 == OpponentSource.NOT_FOUND:
             命中数 = self._按昵称找(参数)[0]
             if 命中数 > 1:
                 候选 = "\n".join(
@@ -439,16 +445,16 @@ class Main(Star):
             yield event.plain_result("不能跟自己 PK。")
             return
 
-        async with 完美传输(self._请求超时) as 传输:
+        async with WmpvpClient(self._请求超时) as 传输:
             try:
-                自己数据, 自己统计 = await 读战绩数据(传输, 自己记录["steamid"])
+                自己数据, 自己统计 = await fetch_battle_data(传输, 自己记录["steamid"])
             except Exception as exc:
                 logger.warning(f"[aiwm] PK 读自己战绩失败：{type(exc).__name__}: {exc}")
                 yield event.plain_result(f"读取你的战绩失败：{exc}")
                 return
 
             try:
-                对手数据, 对手统计 = await 读战绩数据(传输, 对手steamid)
+                对手数据, 对手统计 = await fetch_battle_data(传输, 对手steamid)
             except Exception as exc:
                 logger.warning(f"[aiwm] PK 读对手战绩失败：{type(exc).__name__}: {exc}")
                 yield event.plain_result(f"读取对方的战绩失败：{exc}")
@@ -524,7 +530,7 @@ class Main(Star):
 
         文本是命令参数与消息正文的拼接——正文里的 `<@!id>` 形式要靠它抠。
         """
-        return 找对手(
+        return find_opponent(
             event.get_messages(),
             f"{参数} {getattr(event, 'message_str', '') or ''}",
             自己=event.get_sender_id(),
@@ -547,9 +553,9 @@ class Main(Star):
         if not 记录:
             return "还没绑定，先发 /爱完美 绑定 <steamid64>。", None
 
-        async with 完美传输(self._请求超时) as 传输:
+        async with WmpvpClient(self._请求超时) as 传输:
             try:
-                文本, 统计 = await 读战绩数据(传输, 记录["steamid"])
+                文本, 统计 = await fetch_battle_data(传输, 记录["steamid"])
             except Exception as exc:
                 logger.warning(f"[aiwm] 读战绩失败：{type(exc).__name__}: {exc}")
                 return f"读取战绩失败：{exc}", None

@@ -18,38 +18,38 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["找对手", "不是标识的提及"]
+__all__ = ["find_opponent", "FAKE_MENTION_IDS"]
 
 # `<@1234>` 与 `<@!1234>` 两种写法都存在。长度下限用来滤掉 `<@1>` 这类噪声。
-_正文提及 = re.compile(r"<@!?([A-Za-z0-9_-]{6,})>")
+_MENTION_IN_TEXT = re.compile(r"<@!?([A-Za-z0-9_-]{6,})>")
 
 # 这些值在 At.qq 里出现过，都不是真实用户。
-不是标识的提及 = frozenset({"qq_official", "all", "unknown_selfid"})
+FAKE_MENTION_IDS = frozenset({"qq_official", "all", "unknown_selfid"})
 
 
-def _可用(候选: str, 排除: set[str]) -> bool:
-    return bool(候选) and 候选 not in 不是标识的提及 and 候选 not in 排除
+def _usable(candidate: str, excluded: set[str]) -> bool:
+    return bool(candidate) and candidate not in FAKE_MENTION_IDS and candidate not in excluded
 
 
-def 找对手(消息列表, 文本: str, *, 自己: str = "", 机器人: str = "") -> str | None:
+def find_opponent(components, text: str, *, me: str = "", bot_id: str = "") -> str | None:
     """从消息里找出 PK 的对手标识，找不到返回 None。
 
     `自己` 与 `机器人` 都得排掉：群里 @机器人 同样会生成一个 At 组件，
     不排掉的话「@机器人 PK @小明」会把机器人当成 PK 对象。
     """
-    排除 = {值 for 值 in (自己, 机器人) if 值}
+    excluded = {value for value in (me, bot_id) if value}
 
-    for 组件 in 消息列表 or []:
-        候选 = getattr(组件, "qq", None)
-        if 候选 is None:
+    for component in components or []:
+        candidate = getattr(component, "qq", None)
+        if candidate is None:
             continue
-        候选 = str(候选)
-        if _可用(候选, 排除):
-            return 候选
+        candidate = str(candidate)
+        if _usable(candidate, excluded):
+            return candidate
 
-    for 命中 in _正文提及.finditer(文本 or ""):
-        候选 = 命中.group(1)
-        if _可用(候选, 排除):
-            return 候选
+    for hit in _MENTION_IN_TEXT.finditer(text or ""):
+        candidate = hit.group(1)
+        if _usable(candidate, excluded):
+            return candidate
 
     return None

@@ -16,82 +16,82 @@ from __future__ import annotations
 
 import pytest
 
-from aiwm.兜底 import (
-    以组名开头,
-    取落空参数,
-    子命令名,
-    是否落空,
-    落空提示,
+from aiwm.fallback import (
+    SUBCOMMANDS,
+    is_command_miss,
+    leftover_arg,
+    miss_hint,
+    starts_with_group,
 )
 
 
 class Test取落空参数:
     def test_取出组名后面的内容(self):
-        assert 取落空参数("/爱完美 https://x.com/profiles/7656", "爱完美") == (
+        assert leftover_arg("/爱完美 https://x.com/profiles/7656", "爱完美") == (
             "https://x.com/profiles/7656"
         )
 
     def test_带开头的斜杠与空格(self):
-        assert 取落空参数("/爱完美   76561198829920790", "爱完美") == "76561198829920790"
+        assert leftover_arg("/爱完美   76561198829920790", "爱完美") == "76561198829920790"
 
     def test_只有组名时是空(self):
-        assert 取落空参数("/爱完美", "爱完美") == ""
+        assert leftover_arg("/爱完美", "爱完美") == ""
 
     def test_没带斜杠也认(self):
         """有些平台的消息不会带 `/`。"""
-        assert 取落空参数("爱完美 绑定", "爱完美") == "绑定"
+        assert leftover_arg("爱完美 绑定", "爱完美") == "绑定"
 
     def test_组名出现两次时取第一个之后的(self):
-        assert 取落空参数("/爱完美 /爱完美 战绩", "爱完美") == "/爱完美 战绩"
+        assert leftover_arg("/爱完美 /爱完美 战绩", "爱完美") == "/爱完美 战绩"
 
 
 class Test子命令名:
     def test_认得各个子命令(self):
         for 名 in ("战绩", "锐评", "开一局", "PK", "昵称", "解绑", "状态", "帮助", "绑定"):
-            assert 名 in 子命令名
+            assert 名 in SUBCOMMANDS
 
     def test_认得别名(self):
         """别名也要认，否则用户打 `/爱完美 开局` 照样落空。"""
         for 别名 in ("pk", "对战", "开局", "来一局", "help", "菜单", "status"):
-            assert 别名 in 子命令名
+            assert 别名 in SUBCOMMANDS
 
     def test_认得大小写差异(self):
-        assert "PK" in 子命令名
-        assert "pk" in 子命令名
+        assert "PK" in SUBCOMMANDS
+        assert "pk" in SUBCOMMANDS
 
 
 class Test落空提示:
     def test_指向绑定(self):
         """落空的最常见原因是没绑定，或用户以为发 id 就行。"""
-        提示 = 落空提示("76561198829920790")
+        提示 = miss_hint("76561198829920790")
 
         assert "绑定" in 提示
 
     def test_把参数原样带回去(self):
         """用户不用重新打字。"""
-        提示 = 落空提示("76561198829920790")
+        提示 = miss_hint("76561198829920790")
 
         assert "76561198829920790" in 提示
 
     def test_没参数时指向帮助(self):
         """只留一句出口，不再复述一份迷你菜单。"""
-        提示 = 落空提示("")
+        提示 = miss_hint("")
 
         assert "/爱完美 帮助" in 提示
 
     def test_不给链接(self):
         """别再教用户发链接了，那条路走不通——Steam 社区站要登录态，
         而且插件也没必要去查别人的主页。"""
-        提示 = 落空提示("https://steamcommunity.com/profiles/7656")
+        提示 = miss_hint("https://steamcommunity.com/profiles/7656")
 
         assert "链接" not in 提示 or "绑" in 提示
 
     def test_不长(self):
         """落空说明要短，太长就成了第二份帮助文本。"""
-        assert len(落空提示("76561198829920790")) <= 120
+        assert len(miss_hint("76561198829920790")) <= 120
 
     def test_空参数不抛(self):
-        assert 落空提示("").strip()
+        assert miss_hint("").strip()
 
 
 class Test该拦不该拦:
@@ -122,14 +122,14 @@ class Test该拦不该拦:
         顺带验「该拦」本身——上一版只断言了前半段，把后半段改成永远 False
         测试也不红，等于没钉。
         """
-        assert 是否落空(消息, "爱完美") is 期望落空
+        assert is_command_miss(消息, "爱完美") is 期望落空
 
     def test_不带斜杠也算本组(self):
         """有些平台的消息不带 `/`，只按带斜杠的形式判会漏掉。"""
-        参数 = 取落空参数("爱完美 76561198829920790", "爱完美")
+        参数 = leftover_arg("爱完美 76561198829920790", "爱完美")
 
         assert 参数 == "76561198829920790"
-        assert not any(参数.startswith(名) for 名 in 子命令名)
+        assert not any(参数.startswith(名) for 名 in SUBCOMMANDS)
 
     def test_别的插件的指令不算本组(self):
         """`/爱农 开一局` 是另一个插件的，不能被这里抢走。
@@ -142,9 +142,9 @@ class Test该拦不该拦:
         掐死——不只爱农，连「在吗」这种纯聊天也会被掐，老狗直接不理人。
         所以非本组消息必须返回**空串**，让调用方一眼看出不归自己管。
         """
-        assert 取落空参数("/爱农 开一局", "爱完美") == ""
-        assert not 是否落空("/爱农 开一局", "爱完美")
-        assert not 是否落空("爱瓦 绑定", "爱完美")
+        assert leftover_arg("/爱农 开一局", "爱完美") == ""
+        assert not is_command_miss("/爱农 开一局", "爱完美")
+        assert not is_command_miss("爱瓦 绑定", "爱完美")
 
     @pytest.mark.parametrize(
         "消息",
@@ -152,18 +152,18 @@ class Test该拦不该拦:
     )
     def test_陌生消息一律放行(self, 消息):
         """这六条都实测掐过（`老狗不理人`）。"""
-        assert not 是否落空(消息, "爱完美"), f"{消息!r} 被误判成爱完美的落空"
+        assert not is_command_miss(消息, "爱完美"), f"{消息!r} 被误判成爱完美的落空"
 
     @pytest.mark.parametrize(
         "消息",
         ["/爱完美 绑定", "爱完美 绑定", "/爱完美 战绩", "爱完美 PK 老王", "/爱完美 help"],
     )
     def test_本组正常指令放行(self, 消息):
-        assert not 是否落空(消息, "爱完美"), f"{消息!r} 是正常指令，不该判成落空"
+        assert not is_command_miss(消息, "爱完美"), f"{消息!r} 是正常指令，不该判成落空"
 
     def test_以组名开头(self):
-        assert 以组名开头("爱完美 绑定", "爱完美")
-        assert 以组名开头("/爱完美 绑定", "爱完美")
-        assert not 以组名开头("爱农 开一局", "爱完美")
-        assert not 以组名开头("在吗", "爱完美")
-        assert not 以组名开头("", "爱完美")
+        assert starts_with_group("爱完美 绑定", "爱完美")
+        assert starts_with_group("/爱完美 绑定", "爱完美")
+        assert not starts_with_group("爱农 开一局", "爱完美")
+        assert not starts_with_group("在吗", "爱完美")
+        assert not starts_with_group("", "爱完美")

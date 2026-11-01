@@ -59,9 +59,9 @@ if not 问题:
 
 # 4. 真的 import 一遍插件包（不加载插件，只验模块级代码）
 try:
-    importlib.import_module("aiwm.兜底")
+    importlib.import_module("aiwm.fallback")
     importlib.import_module("aiwm.pk_target")
-    importlib.import_module("aiwm.来源")
+    importlib.import_module("aiwm.source")
     print("[通过] aiwm 各模块可导入")
 except Exception as exc:
     问题.append(f"import 失败：{type(exc).__name__}: {exc}")

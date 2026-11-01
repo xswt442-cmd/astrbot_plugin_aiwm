@@ -29,10 +29,10 @@
 
 from __future__ import annotations
 
-__all__ = ["数据源说明", "段位分数的来源"]
+__all__ = ["DATA_SOURCE_LABEL", "TIER_SCORE_SOURCE"]
 
 # 数据源的说法。出现在帮助文本与战绩输出的开头。
-数据源说明 = "CS2 官方匹配（官匹）"
+DATA_SOURCE_LABEL = "CS2 官方匹配（官匹）"
 
 # `rank` 这个字段在当前响应里对应的是什么段位。
-段位分数的来源 = "官匹分数段"
+TIER_SCORE_SOURCE = "官匹分数段"

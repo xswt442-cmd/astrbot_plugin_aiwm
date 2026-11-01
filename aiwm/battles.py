@@ -10,14 +10,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from .stats import 段位名, 汇总文本, 统计战绩
+from .stats import summarize, summary_text, tier_name
 
-__all__ = ["读战绩数据"]
+__all__ = ["fetch_battle_data"]
 
 
-async def 读战绩数据(传输, steamid: str) -> tuple[str, dict[str, Any]]:
+async def fetch_battle_data(client, steam_id: str) -> tuple[str, dict[str, Any]]:
     """取一个 steamid64 的战绩，返回 (给模型读的文本, 统计字典)。"""
-    响应 = await 传输.查战绩(steamid)
-    统计 = 统计战绩(响应)
-    文本 = 汇总文本(统计, 段位=段位名(统计.get("段位分")))
-    return 文本, 统计
+    response = await client.查战绩(steam_id)
+    stats = summarize(response)
+    text = summary_text(stats, 段位=tier_name(stats.get("段位分")))
+    return text, stats

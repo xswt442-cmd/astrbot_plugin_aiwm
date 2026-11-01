@@ -24,7 +24,7 @@
 
 ## 数据源是官匹，不是完美平台
 
-**输出中不能写「完美平台战绩」。** 接口挂在 `api.wmpvp.com` 下，返回的是 CS2 官方匹配数据——三条实测证据在 `aiwm/来源.py`。
+**输出中不能写「完美平台战绩」。** 接口挂在 `api.wmpvp.com` 下，返回的是 CS2 官方匹配数据——三条实测证据在 `aiwm/source.py`。
 
 表述错误的后果是用户拿官匹数据核对后发现不一致，判定插件故障。段位同理，那是官匹分数段，不是完美平台的段位名。
 
@@ -34,11 +34,11 @@
 
 `/爱完美 <未匹配子命令的内容>` 时 `CommandGroupFilter.filter` 的 `startswith` 返回 False，指令被跳过，消息进模型，模型会自行作答。实测用户发送 `/爱完美 <Steam 主页链接>`，模型回复「打不开 Steam，你发链接干嘛」并自称没有爬取权限——它并未访问 Steam，是在生成文本。
 
-指令组挂 `_落空兜底`（`CustomFilter`）：仅在落空时 `set_result` + `stop_event`。判据在 `aiwm/兜底.是否落空`，**必须与 `CommandGroupFilter.startswith` 一致（字面前缀匹配）**，否则会拦截正常指令。`.filter` 返回值的语义是「本组是否处理这条消息」，不是「是否命中」，**所有出口必须 `return True`**：写成「命中返回 False」会使整个指令组失效。
+指令组挂 `_落空兜底`（`CustomFilter`）：仅在落空时 `set_result` + `stop_event`。判据在 `aiwm/fallback.是否落空`，**必须与 `CommandGroupFilter.startswith` 一致（字面前缀匹配）**，否则会拦截正常指令。`.filter` 返回值的语义是「本组是否处理这条消息」，不是「是否命中」，**所有出口必须 `return True`**：写成「命中返回 False」会使整个指令组失效。
 
 组名另挂 `_组别名 = {f"/{_组名}"}`：QQ 官方的 At 唤醒分支不剥 `message_str` 里的 `/`，缺少该别名时 `@机器人 /爱完美 战绩` 无响应。
 
-`aiwm/兜底.子命令名` 是手抄的别名清单，改动 main.py 的指令或别名时同步修改；`test_main_wiring.py` 核对，缺一个即失败。
+`aiwm/fallback.子命令名` 是手抄的别名清单，改动 main.py 的指令或别名时同步修改；`test_main_wiring.py` 核对，缺一个即失败。
 
 ## 模型不生成数据中不存在的内容
 
@@ -56,8 +56,8 @@
 - `aiwm/prompts.py` — 锐评、开一局、PK 的提示词（独立成模块以便单测）
 - `aiwm/pk.py` — 从 `@` 组件与正文中取被 @ 者的标识
 - `aiwm/pk_target.py` — PK 对手来源：steamid / At / 昵称
-- `aiwm/兜底.py` — 指令落空的判据与提示
-- `aiwm/来源.py` — 接口返回数据的来源与依据
+- `aiwm/fallback.py` — 指令落空的判据与提示
+- `aiwm/source.py` — 接口返回数据的来源与依据
 - `aiwm/storage.py` — 绑定记录与 steamid 提取校验
 - `test/` — pytest 用例、字段核对规则、手工验证脚本
 - `docs/` — 更新日志与发版说明

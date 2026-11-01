@@ -103,7 +103,7 @@ class Test接线:
     # 注意 `ast.unparse` 会把字符串统一规范成单引号，断言里照这个写。
     def test_指令组名是爱完美(self):
         """组名走 `_组名` 常量，兜底那个 filter 也靠它剥前缀——改一处要够到
-        帮助文本与 `aiwm/兜底.py`。"""
+        帮助文本与 `aiwm/fallback.py`。"""
         模块 = ast.parse(main源.read_text(encoding="utf-8"))
         常量 = [
             节点.value.value
@@ -179,7 +179,7 @@ class Test接线:
     def test_PK_参数优先于昵称(self):
         """参数里含 steamid 就直接查——对方不用绑定。"""
         源码 = _方法源码("PK")
-        assert "取对手标识" in 源码
+        assert "resolve_opponent" in 源码
 
     def test_PK_用取到的steamid(self):
         """id 那条路没有本机记录，昵称那条才有记录，所以要分开拿。"""
@@ -194,7 +194,7 @@ class Test接线:
     def test_绑定前先探接口(self):
         """用户打错一位数字的话要在绑定时就发现，而不是存进去之后每次查询失败。"""
         源码 = _方法源码("绑定")
-        assert "读战绩数据" in 源码
+        assert "fetch_battle_data" in 源码
         assert "取有效steamid" in 源码
 
     def test_凭据目录按插件名分开(self):
@@ -211,11 +211,11 @@ class Test接线:
         assert "'plugin_data' / 'aiwm'" not in 主源码
 
     def test_兜底的别名清单与指令一致(self):
-        """`aiwm.兜底.子命令名` 是手抄的，main.py 改了别名忘了改它，
+        """`aiwm.fallback.子命令名` 是手抄的，main.py 改了别名忘了改它，
         用户打那个别名时就静默落空——而落空的表现是模型开始胡说，很难归因。"""
         import ast as _ast
 
-        from aiwm.兜底 import 子命令名
+        from aiwm.fallback import SUBCOMMANDS
 
         树 = _ast.parse(main源.read_text(encoding="utf-8"))
         实际: set[str] = set()
@@ -238,7 +238,7 @@ class Test接线:
                     if isinstance(元素, _ast.Constant) and isinstance(元素.value, str):
                         实际.add(元素.value)
 
-        assert 实际 <= 子命令名, f"main.py 里有子命令没登记进兜底：{实际 - 子命令名}"
+        assert 实际 <= SUBCOMMANDS, f"main.py 里有子命令没登记进兜底：{实际 - SUBCOMMANDS}"
 
     def test_锐评与PK都拿当前对话的模型(self):
         """两个指令都要先取当前会话用的模型，不能写死一个。"""
@@ -313,7 +313,7 @@ class Test兜底过滤器挂法:
 
     def test_先判是否归自己管(self):
         方法 = self._兜底filter()
-        assert "以组名开头" in ast.unparse(方法), "缺了归属判断，会掐掉别人的消息"
+        assert "starts_with_group" in ast.unparse(方法), "缺了归属判断，会掐掉别人的消息"
 
     def test_命中分支要掐掉事件(self):
         """命中落空必须 stop_event，否则消息会漏给模型让它开始编。"""
@@ -474,22 +474,22 @@ class Test空指令给帮助:
 
     @pytest.mark.parametrize("消息", ["/爱完美", "爱完美", "/爱完美   ", "爱完美 "])
     def test_只发组名算空指令(self, 消息: str):
-        from aiwm.兜底 import 是否空指令
+        from aiwm.fallback import is_bare_command
 
-        assert 是否空指令(消息, "爱完美")
+        assert is_bare_command(消息, "爱完美")
 
     @pytest.mark.parametrize(
         "消息",
         ["/爱完美 战绩", "爱完美战绩", "/爱瓦 状态", "今天天气不错", ""],
     )
     def test_带参数或别人的消息不算(self, 消息: str):
-        from aiwm.兜底 import 是否空指令
+        from aiwm.fallback import is_bare_command
 
-        assert not 是否空指令(消息, "爱完美")
+        assert not is_bare_command(消息, "爱完美")
 
     def test_过滤器回帮助而不是落空提示(self):
         源 = main源.read_text(encoding="utf-8")
         体 = 源[源.index("class _落空兜底") :]
         体 = 体[: 体.index("class Main(")]
-        assert "是否空指令(" in 体
+        assert "is_bare_command(" in 体
         assert "_帮助文本" in 体, "空指令要回帮助，不能只说「不是子命令」"
