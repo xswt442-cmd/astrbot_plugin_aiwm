@@ -82,7 +82,7 @@ class Test构造签名:
         比看签名可靠——它验的是参数能不能少传，而不只是签名长什么样。
         """
         构造 = _方法("__init__")
-        参数 = [
+        arg = [
             inspect.Parameter(
                 项.arg,
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
@@ -94,9 +94,9 @@ class Test构造签名:
         ]
 
         # self 与 context，不传 config —— 这就是没有配置文件时 AstrBot 的调用
-        绑定 = inspect.Signature(参数).bind(object(), object())
+        bind_cmd = inspect.Signature(arg).bind(object(), object())
 
-        assert "config" not in 绑定.arguments
+        assert "config" not in bind_cmd.arguments
 
 
 class Test接线:
@@ -109,7 +109,7 @@ class Test接线:
             节点.value.value
             for 节点 in 模块.body
             if isinstance(节点, ast.Assign)
-            and getattr(节点.targets[0], "id", "") == "_组名"
+            and getattr(节点.targets[0], "id", "") == "_GROUP"
             and isinstance(节点.value, ast.Constant)
         ]
 
@@ -117,7 +117,7 @@ class Test接线:
 
     def test_组名常量用在了指令组上(self):
         源码 = ast.unparse(_类树())
-        assert "command_group(_组名" in 源码
+        assert "command_group(_GROUP" in 源码
 
     def test_组别名带上斜杠(self):
         """QQ 官方的 At 唤醒分支不剥 message_str 里的 `/`。
@@ -127,15 +127,16 @@ class Test接线:
         静默失败。加一个带斜杠的组别名，两种写法都能进。
         """
         # `ast.unparse` 把字符串规范成单引号，所以这里按源码文本查。
-        assert "_组别名" in ast.unparse(_类树()), "指令组没带组别名"
+        assert "_GROUP_ALIASES" in ast.unparse(_类树()), "指令组没带组别名"
         模块 = ast.parse(main源.read_text(encoding="utf-8"))
         别名 = [
             节点.value
             for 节点 in 模块.body
-            if isinstance(节点, ast.Assign) and getattr(节点.targets[0], "id", "") == "_组别名"
+            if isinstance(节点, ast.Assign)
+            and getattr(节点.targets[0], "id", "") == "_GROUP_ALIASES"
         ]
         assert 别名, "缺 _组别名，QQ 官方上带斜杠的写法会静默失败"
-        assert "_组名" in ast.unparse(别名[0]), "组别名应该是 /组名，写死字符串会漏改"
+        assert "_GROUP" in ast.unparse(别名[0]), "组别名应该是 /组名，写死字符串会漏改"
 
     def test_指令都挂在方法上(self):
         """所有 command 装饰器都要挂在某个方法上，不能散在模块顶层。"""
@@ -156,16 +157,16 @@ class Test接线:
         「提问者还没有」或「读取战绩失败」开头。靠前缀判断的话，锐评会把这句
         当成数据喂给模型，而锐评提示要求写够 3 个具体数字，模型只能编。
         """
-        读战绩 = _方法源码("_读战绩")
+        读战绩 = _方法源码("_fetch_battles")
         # 返回值是二元组，第二个是统计字典，没有数据时为 None
         assert "tuple[str, dict[str, Any] | None]" in 读战绩
         assert "'还没绑定，先发 /爱完美 绑定 <steamid64>。', None" in 读战绩
         # 数据为空时（玩家关了战绩展示）也要返回 None
-        assert "return (文本, None)" in 读战绩
+        assert "return (text, None)" in 读战绩
 
     def test_锐评看统计字典而不是文本(self):
-        锐评 = _方法源码("锐评")
-        assert "if 统计 is None:" in 锐评
+        review_cmd = _方法源码("review_cmd")
+        assert "if stats is None:" in review_cmd
 
     def test_战绩不可用的前缀判断已经不存在(self):
         """这个判断被统计字典取代了，留着会有人以为还能用。"""
@@ -174,7 +175,7 @@ class Test接线:
 
     def test_PK_走昵称查找(self):
         """QQ 官方平台拿不到被 @ 的人的标识，昵称那条是实际能走通的路径。"""
-        assert "按昵称找" in _方法源码("_按昵称找")
+        assert "find_by_nickname" in _方法源码("_find_by_nickname")
 
     def test_PK_参数优先于昵称(self):
         """参数里含 steamid 就直接查——对方不用绑定。"""
@@ -184,7 +185,7 @@ class Test接线:
     def test_PK_用取到的steamid(self):
         """id 那条路没有本机记录，昵称那条才有记录，所以要分开拿。"""
         源码 = ast.unparse(_类树())
-        assert "对手steamid" in 源码
+        assert "opponent_steam_id" in 源码
         assert "对手记录['steamid']" not in 源码
 
     def test_PK_自己跟自己要挡住(self):
@@ -193,7 +194,7 @@ class Test接线:
 
     def test_绑定前先探接口(self):
         """用户打错一位数字的话要在绑定时就发现，而不是存进去之后每次查询失败。"""
-        源码 = _方法源码("绑定")
+        源码 = _方法源码("bind_cmd")
         assert "fetch_battle_data" in 源码
         assert "resolve_steamid" in 源码
 
@@ -204,10 +205,10 @@ class Test接线:
         插件目录名。自造简称（`aiwm`）会被驳回，所以这里钉死插件名。
         """
         源码 = ast.unparse(_类树())
-        assert "StarTools.get_data_dir(_插件名)" in 源码
+        assert "StarTools.get_data_dir(_PLUGIN_NAME)" in 源码
 
         主源码 = main源.read_text(encoding="utf-8")
-        assert '_插件名 = "astrbot_plugin_aiwm"' in 主源码
+        assert '_PLUGIN_NAME = "astrbot_plugin_aiwm"' in 主源码
         assert "'plugin_data' / 'aiwm'" not in 主源码
 
     def test_兜底的别名清单与指令一致(self):
@@ -242,34 +243,34 @@ class Test接线:
 
     def test_锐评与PK都拿当前对话的模型(self):
         """两个指令都要先取当前会话用的模型，不能写死一个。"""
-        for 名 in ("锐评", "PK"):
+        for 名 in ("review_cmd", "PK"):
             源码 = _方法源码(名)
             assert "get_current_chat_provider_id" in 源码, f"{名} 没有取当前对话用的模型"
 
     def test_开一局也在取当前对话的模型(self):
-        源码 = _方法源码("开一局")
+        源码 = _方法源码("play_match_cmd")
 
         assert "get_current_chat_provider_id" in 源码
 
     def test_开一局用随机种子(self):
         """每次发都得是新的一局。固定种子会让人看到重复的局。"""
-        源码 = _方法源码("开一局")
+        源码 = _方法源码("play_match_cmd")
 
         assert "random.Random()" in 源码
         assert "random.seed" not in 源码
 
     def test_开一局先给设定再给复盘(self):
         """模型写崩了，至少还有这一局的数字可看。"""
-        源码 = _方法源码("开一局")
+        源码 = _方法源码("play_match_cmd")
 
         assert 源码.count("setup_text") >= 2, "设定文本应该在提示与输出里各用一次"
 
     def test_开一局读战绩失败不影响整条指令(self):
         """绑定着但接口挂了就退回「无历史数据」那一档，别让这条指令整个用不了。"""
-        源码 = _方法源码("开一局")
+        源码 = _方法源码("play_match_cmd")
 
         assert "except Exception" in 源码
-        assert "统计 = None" in 源码
+        assert "stats = None" in 源码
 
     def test_PK_提示里没有甲乙与真实姓名混用(self):
         """已算好的对比与占优项数必须用同一套名字。
@@ -278,7 +279,7 @@ class Test接线:
         """
         源码 = ast.unparse(_方法("PK"))
         assert 'contrast_text(points, "甲", "乙")' not in 源码
-        assert "contrast_text(要点, 自己名, 对手名)" in 源码
+        assert "contrast_text(points, my_name, opponent_name)" in 源码
 
 
 class Test兜底过滤器挂法:
@@ -294,7 +295,7 @@ class Test兜底过滤器挂法:
 
     def _兜底filter(self) -> ast.FunctionDef:
         for 节点 in _树().body:
-            if isinstance(节点, ast.ClassDef) and 节点.name == "_落空兜底":
+            if isinstance(节点, ast.ClassDef) and 节点.name == "_MissFallbackFilter":
                 for 体 in 节点.body:
                     if isinstance(体, ast.FunctionDef) and 体.name == "filter":
                         return 体
@@ -345,8 +346,8 @@ class Test源码卫生:
             for 节点 in ast.walk(_树())
             if isinstance(节点, (ast.FunctionDef, ast.AsyncFunctionDef))
         ]:
-            for 函数名, 行号, 名字 in _未绑定读取(函数):
-                问题.append(f"{函数名} 第{行号}行 except 里读了 {sorted(名字)}")
+            for 函数名, 行号, name in _未绑定读取(函数):
+                问题.append(f"{函数名} 第{行号}行 except 里读了 {sorted(name)}")
         assert not 问题, "\n".join(问题)
 
 
@@ -366,7 +367,7 @@ def _绑定的(节点们: list[ast.AST]) -> set[str]:
 def _未绑定读取(函数: ast.AsyncFunctionDef | ast.FunctionDef) -> list[tuple[str, int, set]]:
     """找出 `except` 里读了「同一个 try 体内才绑定」的变量的地方。"""
     报告: list[tuple[str, int, set]] = []
-    已绑 = {参数.arg for 参数 in 函数.args.args}
+    已绑 = {arg.arg for arg in 函数.args.args}
 
     def 扫(节点们: list[ast.stmt]) -> None:
         for 节点 in 节点们:
@@ -397,9 +398,9 @@ def _未绑定读取(函数: ast.AsyncFunctionDef | ast.FunctionDef) -> list[tup
 
 
 def _帮助块() -> str:
-    文本 = main源.read_text(encoding="utf-8")
-    起点 = 文本.index('_帮助文本 = """') + len('_帮助文本 = """')
-    return 文本[起点 : 文本.index('"""', 起点)]
+    text = main源.read_text(encoding="utf-8")
+    起点 = text.index('_HELP_TEXT = """') + len('_HELP_TEXT = """')
+    return text[起点 : text.index('"""', 起点)]
 
 
 def _正式指令名() -> set[str]:
@@ -489,7 +490,7 @@ class Test空指令给帮助:
 
     def test_过滤器回帮助而不是落空提示(self):
         源 = main源.read_text(encoding="utf-8")
-        体 = 源[源.index("class _落空兜底") :]
+        体 = 源[源.index("class _MissFallbackFilter") :]
         体 = 体[: 体.index("class Main(")]
         assert "is_bare_command(" in 体
-        assert "_帮助文本" in 体, "空指令要回帮助，不能只说「不是子命令」"
+        assert "_HELP_TEXT" in 体, "空指令要回帮助，不能只说「不是子命令」"

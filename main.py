@@ -40,71 +40,71 @@ from .aiwm.storage import CredentialStore, clean_nickname, resolve_steamid
 from .aiwm.transport import ApiError, WmpvpClient
 
 # 指令组名。改这里要同时改 `_帮助文本` 的开头与 `aiwm/fallback.py` 的取参函数。
-_组名 = "爱完美"
+_GROUP = "爱完美"
 
 # 组名别名。QQ 官方适配器在「@机器人 + 指令」这条路径上走的是 At 唤醒分支，
 # 那条分支只置 `wake_prefix = ""`，**不剥掉 message_str 里的 `/`**——只有
 # startswith 分支才剥。于是 message_str 仍是 `/爱完美 战绩`，组名 `爱完美`
 # 匹配不上，整条指令静默失败。加一个带斜杠的别名，两种写法都能进。
-_组别名 = {f"/{_组名}"}
+_GROUP_ALIASES = {f"/{_GROUP}"}
 
 # 数据目录必须用插件名。市场审核要求 `data/plugin_data/<plugin_name>`，
 # 而 `<plugin_name>` 指插件目录名，不是自造的简称。
-_插件名 = "astrbot_plugin_aiwm"
+_PLUGIN_NAME = "astrbot_plugin_aiwm"
 # 0.1.9 及以前用的是这个简称目录，升级时把凭据搬过来。
-_旧数据目录名 = "aiwm"
+_LEGACY_DATA_DIR = "aiwm"
 
 
-def _迁移旧凭据(新目录: Path) -> None:
+def _migrate_legacy_credentials(new_dir: Path) -> None:
     """把 `plugin_data/aiwm` 里的凭据搬到 `plugin_data/astrbot_plugin_aiwm`。
 
     只搬不覆盖：新目录已有同名文件就保留新的。搬完把空掉的旧目录删掉。
     """
-    旧目录 = 新目录.parent / _旧数据目录名
-    if not 旧目录.is_dir() or 旧目录.resolve() == 新目录.resolve():
+    legacy_dir = new_dir.parent / _LEGACY_DATA_DIR
+    if not legacy_dir.is_dir() or legacy_dir.resolve() == new_dir.resolve():
         return
 
-    for 文件 in sorted(旧目录.glob("*.json")):
-        目标 = 新目录 / 文件.name
-        if 目标.exists():
+    for file in sorted(legacy_dir.glob("*.json")):
+        target = new_dir / file.name
+        if target.exists():
             continue
         try:
-            shutil.move(str(文件), str(目标))
-            目标.chmod(0o600)
+            shutil.move(str(file), str(target))
+            target.chmod(0o600)
         except OSError as exc:
-            logger.warning(f"[aiwm] 迁移旧凭据失败 {文件.name}：{exc}")
+            logger.warning(f"[aiwm] 迁移旧凭据失败 {file.name}：{exc}")
 
     try:
-        旧目录.rmdir()
+        legacy_dir.rmdir()
     except OSError:
         pass
 
 
 # PK 名字要念在提示里，太长挤版面。
-_昵称上限 = 16
+_NICKNAME_LIMIT = 16
 
 
-def _配置整数(config: Any, 键: str, 默认: int) -> int:
+def _config_int(config: Any, key: str, default: int) -> int:
     """从配置里取正整数。缺项、写错、非正数都退回默认值。"""
     if config is None:
-        return 默认
+        return default
     try:
-        值 = int(config.get(键, 默认))
+        value = int(config.get(key, default))
     except (TypeError, ValueError):
-        return 默认
-    return 值 if 值 > 0 else 默认
+        return default
+    return value if value > 0 else default
 
 
-def _配置开关(config: Any, 键: str, 默认: bool) -> bool:
+def _config_flag(config: Any, key: str, default: bool) -> bool:
     if config is None:
-        return 默认
+        return default
     try:
-        return bool(config.get(键, 默认))
+        return bool(config.get(key, default))
     except Exception:  # noqa: BLE001 - 配置读不到就当默认
-        return 默认
+        return default
 
 
-_帮助文本 = """爱完美 · CS2 战绩
+_HELP_TEXT = """爱完美 · CS2 战绩
 数据来自 CS2 官方匹配（官匹），不是完美竞技平台。
 /爱完美 绑定 <steamid64>
 记下你的 SteamID64，网址和启动器参数里粘过来也行。
@@ -127,7 +127,7 @@ _帮助文本 = """爱完美 · CS2 战绩
 直接用自然语言问也可以，例如「我的 CS2 战绩怎么样？」"""
 
 
-class _落空兜底(CustomFilter):
+class _MissFallbackFilter(CustomFilter):
     """`/爱完美 <没匹配上子命令的内容>` 时自己回一句。
 
     没有它的话这条消息会被 AstrBot 跳过指令、**原样进模型**——模型收到的是
@@ -146,19 +146,19 @@ class _落空兜底(CustomFilter):
     """
 
     def filter(self, event: AstrMessageEvent, cfg: AstrBotConfig) -> bool:
-        文本 = getattr(event, "message_str", "") or ""
+        text = getattr(event, "message_str", "") or ""
         # 这条过滤器对**每一条消息**都会跑（CommandGroupFilter 先跑
         # custom_filter_ok 再检查组名），所以第一件事是判断关不关我事。
-        if not starts_with_group(文本, _组名):
+        if not starts_with_group(text, _GROUP):
             return True
-        if is_bare_command(文本, _组名):
+        if is_bare_command(text, _GROUP):
             # 只发了「/爱完美」：回帮助。交给框架会甩一串「参数不足」加各指令的
             # docstring，用户看到的是内部说明，不是能发什么。
-            event.set_result(MessageEventResult().message(_帮助文本))
+            event.set_result(MessageEventResult().message(_HELP_TEXT))
             event.stop_event()
             return True
-        if is_command_miss(文本, _组名):
-            event.set_result(MessageEventResult().message(miss_hint(leftover_arg(文本, _组名))))
+        if is_command_miss(text, _GROUP):
+            event.set_result(MessageEventResult().message(miss_hint(leftover_arg(text, _GROUP))))
             event.stop_event()
         return True
 
@@ -168,9 +168,9 @@ class Main(Star):
     #
     # 别写成 `self.爱完美.add_custom_filter(...)`——`self.爱完美` 是
     # `RegisteringCommandable`，它没有那个方法，会在加载时报 AttributeError。
-    @custom_filter(_落空兜底)
-    @command_group(_组名, alias=_组别名)
-    def 爱完美(self):
+    @custom_filter(_MissFallbackFilter)
+    @command_group(_GROUP, alias=_GROUP_ALIASES)
+    def aiwm_group(self):
         """CS2 战绩查询。指令都在这个组下，不占用通用名字。"""
 
     def __init__(self, context: Context, config: AstrBotConfig | None = None) -> None:
@@ -183,53 +183,53 @@ class Main(Star):
         """
         super().__init__(context)
         self.config = config
-        self._请求超时 = _配置整数(config, "request_timeout_seconds", 30)
-        self._最大步数 = _配置整数(config, "llm_max_steps", 8)
-        self._允许PK = _配置开关(config, "pk_enabled", True)
-        self._凭据 = CredentialStore(self._数据目录())
+        self._request_timeout = _config_int(config, "request_timeout_seconds", 30)
+        self._max_steps = _config_int(config, "llm_max_steps", 8)
+        self._pk_enabled = _config_flag(config, "pk_enabled", True)
+        self._store = CredentialStore(self._data_dir())
 
-    def _数据目录(self) -> Path:
+    def _data_dir(self) -> Path:
         from astrbot.core.star.star_tools import StarTools
 
-        目录 = StarTools.get_data_dir(_插件名)
-        _迁移旧凭据(目录)
-        return 目录
+        directory = StarTools.get_data_dir(_PLUGIN_NAME)
+        _migrate_legacy_credentials(directory)
+        return directory
 
-    @爱完美.command("帮助", alias={"help", "菜单"})
-    async def 帮助(self, event: AstrMessageEvent):
+    @aiwm_group.command("帮助", alias={"help", "菜单"})
+    async def help_cmd(self, event: AstrMessageEvent):
         """列出所有指令。"""
-        yield event.plain_result(_帮助文本)
+        yield event.plain_result(_HELP_TEXT)
 
-    @爱完美.command("绑定", alias={"绑定steamid"})
-    async def 绑定(self, event: AstrMessageEvent, 内容: GreedyStr):
+    @aiwm_group.command("绑定", alias={"绑定steamid"})
+    async def bind_cmd(self, event: AstrMessageEvent, content: GreedyStr):
         """绑定 steamid64，绑定后就能查这个号的战绩。
 
         参数接受任意内容：Steam 个人资料页网址、启动器参数、含那串数字的
         消息都行，插件会自己从里面提取 steamid64。
         """
-        用户 = event.get_sender_id()
-        if not 用户:
+        user_id = event.get_sender_id()
+        if not user_id:
             yield event.plain_result("拿不到你的用户标识，无法绑定。")
             return
 
-        已有 = self._凭据.读取(用户)
-        if 已有:
+        existing = self._store.read(user_id)
+        if existing:
             yield event.plain_result(
-                f"已经绑定了 steamid {已有['steamid']}，换号先发 /爱完美 解绑。"
+                f"已经绑定了 steamid {existing['steamid']}，换号先发 /爱完美 解绑。"
             )
             return
 
         try:
-            有效 = resolve_steamid(str(内容))
+            valid = resolve_steamid(str(content))
         except ValueError as exc:
             yield event.plain_result(str(exc))
             return
 
         # 先探一次接口再落库。用户打错一位数字的话，这里就会失败，
         # 而不是存进去之后每次查询都报错。
-        async with WmpvpClient(self._请求超时) as 传输:
+        async with WmpvpClient(self._request_timeout) as client:
             try:
-                文本, 统计 = await fetch_battle_data(传输, 有效)
+                text, stats = await fetch_battle_data(client, valid)
             except ApiError as exc:
                 yield event.plain_result(f"接口拒绝了这次查询：{exc}")
                 return
@@ -238,156 +238,156 @@ class Main(Star):
                 yield event.plain_result(f"接口查询失败：{exc}")
                 return
 
-        if not 统计.get("总场次"):
-            self._凭据.写入(用户, 有效, 昵称=self._昵称(event))
-            yield event.plain_result(f"已绑定 steamid {有效}，但这个号没有战绩数据。")
+        if not stats.get("总场次"):
+            self._store.write(user_id, valid, nickname=self._nickname(event))
+            yield event.plain_result(f"已绑定 steamid {valid}，但这个号没有战绩数据。")
             return
 
         # 顺手记下平台显示名。PK 时要念出双方的名字，而对手的显示名只能
         # 在对方绑定时留下——事件在 PK 那一刻是拿不到的。
-        self._凭据.写入(用户, 有效, 昵称=self._昵称(event))
-        logger.info(f"[aiwm] 用户绑定 steamid {有效}")
-        yield event.plain_result(f"绑定成功，steamid {有效}。\n\n战绩：\n{文本}")
+        self._store.write(user_id, valid, nickname=self._nickname(event))
+        logger.info(f"[aiwm] 用户绑定 steamid {valid}")
+        yield event.plain_result(f"绑定成功，steamid {valid}。\n\n战绩：\n{text}")
 
-    def _昵称(self, event: AstrMessageEvent) -> str:
+    def _nickname(self, event: AstrMessageEvent) -> str:
         """发起绑定那个人的平台显示名。取不到就空着，不猜。"""
         try:
             return clean_nickname(event.get_sender_name() or "")
         except Exception:
             return ""
 
-    @爱完美.command("解绑")
-    async def 解绑(self, event: AstrMessageEvent):
+    @aiwm_group.command("解绑")
+    async def unbind_cmd(self, event: AstrMessageEvent):
         """解除绑定并删除记录。"""
-        用户 = event.get_sender_id()
-        记录 = self._凭据.删除(用户)
-        if not 记录:
+        user_id = event.get_sender_id()
+        record = self._store.delete(user_id)
+        if not record:
             yield event.plain_result("还没绑定。")
             return
-        yield event.plain_result(f"已解绑（steamid {记录['steamid']}）。")
+        yield event.plain_result(f"已解绑（steamid {record['steamid']}）。")
 
-    @爱完美.command("昵称")
-    async def 昵称(self, event: AstrMessageEvent, 名字: GreedyStr):
+    @aiwm_group.command("昵称")
+    async def nickname(self, event: AstrMessageEvent, name: GreedyStr):
         """改 PK 时被叫的名字。不带参数时看当前是什么。"""
-        用户 = event.get_sender_id()
-        记录 = self._凭据.读取(用户)
-        if not 记录:
+        user_id = event.get_sender_id()
+        record = self._store.read(user_id)
+        if not record:
             yield event.plain_result("还没绑定，先发 /爱完美 绑定 <steamid64>。")
             return
 
         # 先洗掉换行与零宽字符：昵称会被拼进 PK 提示词，带换行等于多一行指令。
-        新名 = clean_nickname(名字)
-        if not 新名:
-            当前 = clean_nickname(记录.get("昵称") or "")
-            yield event.plain_result(f"当前 PK 名字：「{当前 or '（还没设）'}」。")
+        new_name = clean_nickname(name)
+        if not new_name:
+            current = clean_nickname(record.get("昵称") or "")
+            yield event.plain_result(f"当前 PK 名字：「{current or '（还没设）'}」。")
             return
 
         # 名字要念在 PK 的提示里，太长会把版面挤掉，也让人在 PK 时敲不完。
-        if len(新名) > _昵称上限:
-            yield event.plain_result(f"名字太长了，最多 {_昵称上限} 个字。")
+        if len(new_name) > _NICKNAME_LIMIT:
+            yield event.plain_result(f"名字太长了，最多 {_NICKNAME_LIMIT} 个字。")
             return
 
-        self._凭据.写入(用户, 记录["steamid"], 昵称=新名)
-        yield event.plain_result(f"PK 名字改成「{新名}」。")
+        self._store.write(user_id, record["steamid"], nickname=new_name)
+        yield event.plain_result(f"PK 名字改成「{new_name}」。")
 
-    @爱完美.command("状态", alias={"status"})
-    async def 状态(self, event: AstrMessageEvent):
+    @aiwm_group.command("状态", alias={"status"})
+    async def status_cmd(self, event: AstrMessageEvent):
         """看当前绑定情况。排查用。"""
-        用户 = event.get_sender_id()
-        记录 = self._凭据.读取(用户)
+        user_id = event.get_sender_id()
+        record = self._store.read(user_id)
 
-        行 = [f"你的标识：{用户 or '（拿不到）'}"]
-        if 记录:
-            昵称 = str(记录.get("昵称") or "").strip()
-            行.append(
-                f"已绑定 steamid {记录['steamid']}"
-                + (f"，PK 名字「{昵称}」" if 昵称 else "，还没设 PK 名字")
+        line = [f"你的标识：{user_id or '（拿不到）'}"]
+        if record:
+            nickname = str(record.get("昵称") or "").strip()
+            line.append(
+                f"已绑定 steamid {record['steamid']}"
+                + (f"，PK 名字「{nickname}」" if nickname else "，还没设 PK 名字")
             )
         else:
-            行.append("还没绑定，先发 /爱完美 绑定 <steamid64>。")
+            line.append("还没绑定，先发 /爱完美 绑定 <steamid64>。")
 
-        yield event.plain_result("\n".join(行))
+        yield event.plain_result("\n".join(line))
 
-    @爱完美.command("战绩")
-    async def 战绩(self, event: AstrMessageEvent):
+    @aiwm_group.command("战绩")
+    async def matches_cmd(self, event: AstrMessageEvent):
         """当前绑定的近期战绩摘要。"""
-        文本, _ = await self._读战绩(event.get_sender_id())
-        yield event.plain_result(文本)
+        text, _ = await self._fetch_battles(event.get_sender_id())
+        yield event.plain_result(text)
 
     @llm_tool(name="get_cs2_profile")
-    async def 查询玩家画像(self, event: AstrMessageEvent) -> str:
+    async def profile_tool(self, event: AstrMessageEvent) -> str:
         """读取提问者自己绑定的 CS2 战绩，并给出结构化摘要。
 
         Returns:
             段位、胜率、KD、ADR、KAST 等统计结果，以及常用地图与武器。
             玩家关闭了战绩展示时返回说明文字。
         """
-        文本, _ = await self._读战绩(event.get_sender_id())
-        return 文本
+        text, _ = await self._fetch_battles(event.get_sender_id())
+        return text
 
-    @爱完美.command("锐评")
-    async def 锐评(self, event: AstrMessageEvent):
+    @aiwm_group.command("锐评")
+    async def review_cmd(self, event: AstrMessageEvent):
         """让模型基于近期战绩给一段评价。"""
-        数据, 统计 = await self._读战绩(event.get_sender_id())
-        if 统计 is None:
-            yield event.plain_result(数据)
+        data, stats = await self._fetch_battles(event.get_sender_id())
+        if stats is None:
+            yield event.plain_result(data)
             return
 
         try:
-            提供方 = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
+            provider_id = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
         except Exception as exc:
             yield event.plain_result(f"取不到当前对话用的模型：{exc}")
             return
 
         try:
-            结果 = await self.context.tool_loop_agent(
+            result = await self.context.tool_loop_agent(
                 event=event,
-                chat_provider_id=提供方,
-                prompt=review_prompt(数据),
-                max_steps=self._最大步数,
+                chat_provider_id=provider_id,
+                prompt=review_prompt(data),
+                max_steps=self._max_steps,
             )
         except Exception as exc:
             logger.warning(f"[aiwm] 锐评调用模型失败：{type(exc).__name__}: {exc}")
             yield event.plain_result(f"调用模型失败：{exc}")
             return
 
-        yield event.plain_result(结果.completion_text or "模型没有返回内容。")
+        yield event.plain_result(result.completion_text or "模型没有返回内容。")
 
-    @爱完美.command("开一局", alias={"开局", "来一局"})
-    async def 开一局(self, event: AstrMessageEvent):
+    @aiwm_group.command("开一局", alias={"开局", "来一局"})
+    async def play_match_cmd(self, event: AstrMessageEvent):
         """随机生成一局，让模型推演过程与结果。
 
         数字全是随机生成的，只贴着玩家的真实水平走个形。绑定过的话推演会
         贴近他的实际表现，没绑定就按中等水平来。
         """
-        用户 = event.get_sender_id()
-        记录 = self._凭据.读取(用户)
+        user_id = event.get_sender_id()
+        record = self._store.read(user_id)
 
-        统计 = None
-        if 记录:
+        stats = None
+        if record:
             # 开一局不需要拿到完整战绩，接口失败就退回「无历史数据」那一档，
             # 不要因为查不到战绩就让这条指令整个用不了。
             try:
-                async with WmpvpClient(self._请求超时) as 传输:
-                    _, 统计 = await fetch_battle_data(传输, 记录["steamid"])
+                async with WmpvpClient(self._request_timeout) as client:
+                    _, stats = await fetch_battle_data(client, record["steamid"])
             except Exception as exc:
                 logger.info(f"[aiwm] 开一局读战绩失败，按无历史数据推演：{exc}")
-                统计 = None
+                stats = None
 
-        设定 = build_match_setup(random.Random(), 统计)
+        setup = build_match_setup(random.Random(), stats)
 
         try:
-            提供方 = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
+            provider_id = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
         except Exception as exc:
             yield event.plain_result(f"取不到当前对话用的模型：{exc}")
             return
 
         try:
-            结果 = await self.context.tool_loop_agent(
+            result = await self.context.tool_loop_agent(
                 event=event,
-                chat_provider_id=提供方,
-                prompt=match_prompt(setup_text(设定)),
-                max_steps=self._最大步数,
+                chat_provider_id=provider_id,
+                prompt=match_prompt(setup_text(setup)),
+                max_steps=self._max_steps,
             )
         except Exception as exc:
             logger.warning(f"[aiwm] 开一局调用模型失败：{type(exc).__name__}: {exc}")
@@ -396,39 +396,44 @@ class Main(Star):
 
         # 设定先给用户看，模型写崩了至少还有这一局的数字。
         yield event.plain_result(
-            f"{setup_text(设定)}\n\n{结果.completion_text or '模型没有返回内容。'}"
+            f"{setup_text(setup)}\n\n{result.completion_text or '模型没有返回内容。'}"
         )
 
-    @爱完美.command("PK", alias={"pk", "对战"})
-    async def PK(self, event: AstrMessageEvent, 目标: GreedyStr):
+    @aiwm_group.command("PK", alias={"pk", "对战"})
+    async def PK(self, event: AstrMessageEvent, target: GreedyStr):
         """和另一个人比近期战绩。
 
         对手从三处找，参数优先：参数里含 steamid 就直接用它（对方不用绑定），
         否则试 @ 组件，最后按本机记下的 PK 名字找。
         """
-        if not self._允许PK:
+        if not self._pk_enabled:
             yield event.plain_result("PK 已关闭。")
             return
-        自己 = event.get_sender_id()
-        自己记录 = self._凭据.读取(自己)
-        if not 自己记录:
+        me = event.get_sender_id()
+        my_record = self._store.read(me)
+        if not my_record:
             yield event.plain_result("还没绑定，先发 /爱完美 绑定 <steamid64>。")
             return
 
-        参数 = str(目标).strip()
+        arg = str(target).strip()
         # @ 组件那条要把自己排除掉，否则在群里 @ 一下就变成跟自己 PK。
         # 文本要带上命令参数：官方适配器只把「@机器人」转成组件，@别人会原样
         # 留在正文里。
-        at标识 = self._at标识(event, 参数)
-        对手steamid, 来源, 对手记录 = resolve_opponent(参数, at标识, self._按昵称找)
+        at_id = self._at_id(event, arg)
+        opponent_steam_id, source, opponent_record = resolve_opponent(
+            arg, at_id, self._find_by_nickname
+        )
 
-        if 来源 == OpponentSource.NOT_FOUND:
-            命中数 = self._按昵称找(参数)[0]
-            if 命中数 > 1:
-                候选 = "\n".join(
-                    f"· {记录.get('昵称') or 记录['steamid']}" for 记录 in self._同名候选(参数)[:5]
+        if source == OpponentSource.NOT_FOUND:
+            hit_count = self._find_by_nickname(arg)[0]
+            if hit_count > 1:
+                candidates = "\n".join(
+                    f"· {record.get('昵称') or record['steamid']}"
+                    for record in self._same_name_candidates(arg)[:5]
                 )
-                yield event.plain_result(f"有 {命中数} 个人叫「{参数}」，写完整一点：\n{候选}")
+                yield event.plain_result(
+                    f"有 {hit_count} 个人叫「{arg}」，写完整一点：\n{candidates}"
+                )
                 return
             yield event.plain_result(
                 "没找到要 PK 的人，发他的 steamid64 就行，例如 /爱完美 PK 76561198159976336。"
@@ -437,78 +442,78 @@ class Main(Star):
 
         # 自己跟自己 PK 没有意义。参数直接给 id 时也拦一下——昵称那条拦不住，
         # 因为昵称可能重名，但同一个 id 一眼就能认出来。
-        if 对手steamid == 自己记录["steamid"]:
+        if opponent_steam_id == my_record["steamid"]:
             yield event.plain_result("不能跟自己 PK。")
             return
         # 昵称那条要额外看用户标识：可能查到的是自己那条记录
-        if 对手记录 and str(对手记录.get("用户") or "") == 自己 and 自己:
+        if opponent_record and str(opponent_record.get("用户") or "") == me and me:
             yield event.plain_result("不能跟自己 PK。")
             return
 
-        async with WmpvpClient(self._请求超时) as 传输:
+        async with WmpvpClient(self._request_timeout) as client:
             try:
-                自己数据, 自己统计 = await fetch_battle_data(传输, 自己记录["steamid"])
+                my_data, my_stats = await fetch_battle_data(client, my_record["steamid"])
             except Exception as exc:
                 logger.warning(f"[aiwm] PK 读自己战绩失败：{type(exc).__name__}: {exc}")
                 yield event.plain_result(f"读取你的战绩失败：{exc}")
                 return
 
             try:
-                对手数据, 对手统计 = await fetch_battle_data(传输, 对手steamid)
+                opponent_data, opponent_stats = await fetch_battle_data(client, opponent_steam_id)
             except Exception as exc:
                 logger.warning(f"[aiwm] PK 读对手战绩失败：{type(exc).__name__}: {exc}")
                 yield event.plain_result(f"读取对方的战绩失败：{exc}")
                 return
 
-        if not 自己统计.get("总场次") or not 对手统计.get("总场次"):
+        if not my_stats.get("总场次") or not opponent_stats.get("总场次"):
             yield event.plain_result("有一方没有战绩数据。")
             return
 
-        自己名 = self._显示名(str(自己记录.get("昵称") or ""), "你")
+        my_name = self._display_name(str(my_record.get("昵称") or ""), "你")
         # 参数直接给 id 时没有本机记下的昵称，就用接口返回的显示名——那是这人在
         # 平台上的名字，总比「对手」两个字好。
-        对手名 = self._显示名(
-            str((对手记录 or {}).get("昵称") or 对手统计.get("昵称") or ""), "对手"
+        opponent_name = self._display_name(
+            str((opponent_record or {}).get("昵称") or opponent_stats.get("昵称") or ""), "对手"
         )
 
         # 逐项对比里用真实姓名，不用「甲／乙」。同一份提示里一处写「甲占优」
         # 一处写「老王 3 项」，模型得自己推断甲是老王——这层映射没有必要，
         # 平白多一次出错的机会。
-        要点 = contrast_points(自己统计, 对手统计)
-        if not 要点:
+        points = contrast_points(my_stats, opponent_stats)
+        if not points:
             yield event.plain_result("两边没有可比的项目。")
             return
 
         try:
-            提供方 = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
+            provider_id = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
         except Exception as exc:
             yield event.plain_result(f"取不到当前对话用的模型：{exc}")
             return
 
         try:
-            结果 = await self.context.tool_loop_agent(
+            result = await self.context.tool_loop_agent(
                 event=event,
-                chat_provider_id=提供方,
+                chat_provider_id=provider_id,
                 prompt=pk_prompt(
-                    自己名,
-                    对手名,
-                    contrast_text(要点, 自己名, 对手名),
-                    advantage_count(要点, 自己名, 对手名),
-                    自己数据,
-                    对手数据,
+                    my_name,
+                    opponent_name,
+                    contrast_text(points, my_name, opponent_name),
+                    advantage_count(points, my_name, opponent_name),
+                    my_data,
+                    opponent_data,
                 ),
-                max_steps=self._最大步数,
+                max_steps=self._max_steps,
             )
         except Exception as exc:
             logger.warning(f"[aiwm] PK 调用模型失败：{type(exc).__name__}: {exc}")
             yield event.plain_result(
-                f"调用模型失败：{exc}\n\n两人的数据：\n\n{自己数据}\n\n{对手数据}"
+                f"调用模型失败：{exc}\n\n两人的数据：\n\n{my_data}\n\n{opponent_data}"
             )
             return
 
-        yield event.plain_result(结果.completion_text or "模型没有返回内容。")
+        yield event.plain_result(result.completion_text or "模型没有返回内容。")
 
-    def _按昵称找(self, 参数: str) -> tuple[int, dict[str, Any] | None]:
+    def _find_by_nickname(self, arg: str) -> tuple[int, dict[str, Any] | None]:
         """在本机记下的 PK 名字里找，返回 (命中人数, 要用的记录)。
 
         只有本机绑定过的人在这里。参数直接给 steamid 或 @ 组件那两条路不经过
@@ -517,31 +522,33 @@ class Main(Star):
         命中人数是给「有几个人叫这个名字」那条回复用的。对真实存在的名字回
         一句「没找到」，等于告诉用户他没绑定。
         """
-        命中的 = self._凭据.按昵称找(参数)
-        if len(命中的) == 1:
-            return 1, 命中的[0]
-        if len(命中的) > 1:
-            可选 = "、".join(str(记录.get("昵称") or 记录["steamid"]) for 记录 in 命中的[:5])
-            logger.warning(f"[aiwm] PK 按昵称「{参数}」匹配到 {len(命中的)} 个人：{可选}")
-        return len(命中的), None
+        matched = self._store.find_by_nickname(arg)
+        if len(matched) == 1:
+            return 1, matched[0]
+        if len(matched) > 1:
+            options = "、".join(
+                str(record.get("昵称") or record["steamid"]) for record in matched[:5]
+            )
+            logger.warning(f"[aiwm] PK 按昵称「{arg}」匹配到 {len(matched)} 个人：{options}")
+        return len(matched), None
 
-    def _at标识(self, event: AstrMessageEvent, 参数: str) -> str | None:
+    def _at_id(self, event: AstrMessageEvent, arg: str) -> str | None:
         """从 @ 组件或正文里取被 @ 者的标识。取不到返回 `None`。
 
         文本是命令参数与消息正文的拼接——正文里的 `<@!id>` 形式要靠它抠。
         """
         return find_opponent(
             event.get_messages(),
-            f"{参数} {getattr(event, 'message_str', '') or ''}",
-            自己=event.get_sender_id(),
-            机器人=self._机器人标识(event),
+            f"{arg} {getattr(event, 'message_str', '') or ''}",
+            me=event.get_sender_id(),
+            bot_id=self._bot_id(event),
         )
 
-    def _同名候选(self, 参数: str) -> list[dict[str, Any]]:
+    def _same_name_candidates(self, arg: str) -> list[dict[str, Any]]:
         """按昵称找到的所有记录。给「有几个人叫这个名字」那条回复列候选用。"""
-        return self._凭据.按昵称找(参数)
+        return self._store.find_by_nickname(arg)
 
-    async def _读战绩(self, 用户: str) -> tuple[str, dict[str, Any] | None]:
+    async def _fetch_battles(self, user_id: str) -> tuple[str, dict[str, Any] | None]:
         """读一个用户的战绩，返回 (给用户看的文本, 统计字典)。
 
         统计字典为 None 表示没有可用数据——没绑定、读失败，或者对方关闭了
@@ -549,28 +556,28 @@ class Main(Star):
         「没有战绩数据」和「读取战绩失败」都是给人看的整句话，两者若当成数据
         喂给模型，锐评提示会要求它写够 3 个具体数字，模型只能编。
         """
-        记录 = self._凭据.读取(用户)
-        if not 记录:
+        record = self._store.read(user_id)
+        if not record:
             return "还没绑定，先发 /爱完美 绑定 <steamid64>。", None
 
-        async with WmpvpClient(self._请求超时) as 传输:
+        async with WmpvpClient(self._request_timeout) as client:
             try:
-                文本, 统计 = await fetch_battle_data(传输, 记录["steamid"])
+                text, stats = await fetch_battle_data(client, record["steamid"])
             except Exception as exc:
                 logger.warning(f"[aiwm] 读战绩失败：{type(exc).__name__}: {exc}")
                 return f"读取战绩失败：{exc}", None
 
-        if not 统计.get("总场次"):
-            return 文本, None
-        return 文本, 统计
+        if not stats.get("总场次"):
+            return text, None
+        return text, stats
 
     @staticmethod
-    def _显示名(候选: str, 兜底: str) -> str:
+    def _display_name(candidates: str, fallback: str) -> str:
         # 老记录可能是净化之前存的，念之前再洗一次。
-        return clean_nickname(候选) or 兜底
+        return clean_nickname(candidates) or fallback
 
     @staticmethod
-    def _机器人标识(event: AstrMessageEvent) -> str:
+    def _bot_id(event: AstrMessageEvent) -> str:
         """机器人自己的标识。群里 @机器人 会产生 At 组件，得把它排掉。"""
         try:
             return str(event.get_self_id() or "")

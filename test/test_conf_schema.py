@@ -18,7 +18,7 @@ schema = json.loads((仓库根 / "_conf_schema.json").read_text(encoding="utf-8"
 
 def _代码读的键() -> set[str]:
     键 = set(re.findall(r"config\.get\(\s*[\"']([^\"']+)[\"']", 主源码))
-    键 |= set(re.findall(r"_配置(?:整数|开关)\(\s*config\s*,\s*[\"']([^\"']+)[\"']", 主源码))
+    键 |= set(re.findall(r"_config_(?:int|flag)\(\s*config\s*,\s*[\"']([^\"']+)[\"']", 主源码))
     return 键
 
 
