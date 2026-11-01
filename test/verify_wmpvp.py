@@ -22,49 +22,49 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from 核对规则 import 核对  # noqa: E402
+from 核对规则 import check  # noqa: E402
 
-from aiwm.battles import 读战绩数据  # noqa: E402
-from aiwm.transport import 完美传输  # noqa: E402
+from aiwm.battles import fetch_battle_data  # noqa: E402
+from aiwm.transport import WmpvpClient  # noqa: E402
 
-默认steamid = "76561198159976336"
+DEFAULT_STEAM_ID = "76561198159976336"
 
 
-async def 主() -> int:
-    检查 = "--检查" in sys.argv
-    参数 = [项 for 项 in sys.argv[1:] if not 项.startswith("--")]
-    steamid = 参数[0] if 参数 else 默认steamid
+async def main() -> int:
+    inspect = "--检查" in sys.argv
+    arg = [item for item in sys.argv[1:] if not item.startswith("--")]
+    steamid = arg[0] if arg else DEFAULT_STEAM_ID
 
-    async with 完美传输() as 传输:
+    async with WmpvpClient() as client:
         try:
             # 只取接口原始响应，不过统计层——统计层会把字段名的问题掩盖掉，
             # 比如字段被删了，统计层只是让那一项从文本里消失，看不出来。
-            响应 = await 传输.查战绩(steamid)
+            response = await client.fetch_stats(steamid)
         except Exception as exc:
             print(f"打完美接口失败：{type(exc).__name__}: {exc}")
             return 2
 
-        if not 检查:
-            文本, 统计 = await 读战绩数据(传输, steamid)
-            print(文本)
+        if not inspect:
+            text, stats = await fetch_battle_data(client, steamid)
+            print(text)
             print()
             print("--- 统计字典 ---")
-            for 键, 值 in 统计.items():
-                print(f"{键}: {值}")
+            for key, value in stats.items():
+                print(f"{key}: {value}")
             print()
             print("--- 原始响应 ---")
-            print(json.dumps(响应, ensure_ascii=False, indent=2))
+            print(json.dumps(response, ensure_ascii=False, indent=2))
             return 0
 
-    问题 = 核对(响应)
-    if 问题:
+    problems = check(response)
+    if problems:
         print("接口的字段名或量纲与测试里的构造数据对不上：\n")
-        for 条 in 问题:
-            print(f"  · {条}")
+        for line in problems:
+            print(f"  · {line}")
         return 1
 
     print(f"接口字段名与量纲都对得上（steamid {steamid}）")
     return 0
 
 
-sys.exit(asyncio.run(主()))
+sys.exit(asyncio.run(main()))
